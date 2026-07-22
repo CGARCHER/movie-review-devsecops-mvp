@@ -133,6 +133,73 @@ jobs:
           python scripts/normalize_findings.py --commit "${{ github.sha }}"
           python scripts/mock_remediation.py
           python scripts/evaluate_policy.py
+      - name: Publicar resumen visual de seguridad
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          findings_path = Path("reports/normalized/findings.json")
+          decision_path = Path("reports/normalized/decision.json")
+          findings_data = json.loads(findings_path.read_text(encoding="utf-8")) if findings_path.exists() else {}
+          decision_data = json.loads(decision_path.read_text(encoding="utf-8")) if decision_path.exists() else {}
+
+          summary = findings_data.get("summary", {})
+          counts = summary.get("bySeverity", {})
+          findings = findings_data.get("findings", [])
+          status = decision_data.get("status", "UNKNOWN")
+          status_icon = {
+              "APPROVED": "✅",
+              "REVIEW_REQUIRED": "⚠️",
+              "BLOCKED": "❌",
+          }.get(status, "❔")
+
+          def cell(value):
+              return str(value or "No disponible").replace("|", "\\|").replace("\n", " ")
+
+          lines = [
+              "## Resumen de seguridad",
+              "",
+              f"### {status_icon} Estado de seguridad: **{status}**",
+              "",
+              "| Severidad | Hallazgos |",
+              "|---|---:|",
+          ]
+          for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
+              lines.append(f"| `{severity}` | {counts.get(severity, 0)} |")
+
+          lines.extend([
+              "",
+              f"**Total de hallazgos:** {summary.get('total', len(findings))}",
+              "",
+              "## Detalle de hallazgos",
+              "",
+          ])
+
+          if findings:
+              lines.extend([
+                  "| ID | Herramienta | Categoría | Severidad | Archivo o componente | Descripción |",
+                  "|---|---|---|---|---|---|",
+              ])
+              for finding in findings:
+                  location = finding.get("file") or finding.get("component") or "No disponible"
+                  lines.append(
+                      f"| `{cell(finding.get('id'))}` | {cell(finding.get('tool'))} | "
+                      f"{cell(finding.get('category'))} | `{cell(finding.get('severity'))}` | "
+                      f"{cell(location)} | {cell(finding.get('description'))} |"
+                  )
+          else:
+              lines.append("No se han encontrado hallazgos en los informes disponibles.")
+
+          lines.extend([
+              "",
+              f"Commit analizado: `{os.environ.get('GITHUB_SHA', 'local')}`",
+          ])
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: movie-security-report-${{ github.sha }}
