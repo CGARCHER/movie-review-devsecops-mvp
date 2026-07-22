@@ -92,7 +92,7 @@ jobs:
       - uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: movie-review:${{ github.sha }}
-          trivy-version: v0.54.1
+          version: v0.54.1
           format: json
           output: reports/container/trivy.json
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
