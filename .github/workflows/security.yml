@@ -1,0 +1,135 @@
+name: Security analysis (asynchronous)
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: movie-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install --disable-pip-version-check semgrep
+      - name: Analizar codigo real
+        run: |
+          mkdir -p reports/sast
+          semgrep scan --config security/semgrep.yml --json \
+            --output reports/sast/semgrep.json src || true
+      - name: Validar fixture SAST
+        run: |
+          mkdir -p reports/demo/sast
+          semgrep scan --config security/semgrep.yml --json \
+            --output reports/demo/sast/semgrep-fixture.json security-fixtures/sast || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: movie-sast
+          path: |
+            reports/sast/
+            reports/demo/sast/
+          retention-days: 30
+
+  sca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Analizar dependencias reales
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          NVD_ARGS=()
+          if [ -n "$NVD_API_KEY" ]; then NVD_ARGS=(-DnvdApiKey="$NVD_API_KEY"); fi
+          mvn --batch-mode --no-transfer-progress package -DskipTests \
+            org.owasp:dependency-check-maven:check "${NVD_ARGS[@]}" || true
+          mkdir -p reports/sca
+          cp target/dependency-check/dependency-check-report.* reports/sca/ 2>/dev/null || true
+      - name: Validar fixture SCA
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          NVD_ARGS=()
+          if [ -n "$NVD_API_KEY" ]; then NVD_ARGS=(-DnvdApiKey="$NVD_API_KEY"); fi
+          mkdir -p reports/demo/sca
+          mvn --batch-mode --no-transfer-progress -f security-fixtures/sca/pom.xml \
+            org.owasp:dependency-check-maven:12.1.3:check \
+            -Dformat=JSON -DoutputDirectory="${PWD}/reports/demo/sca" \
+            -DfailBuildOnCVSS=11 "${NVD_ARGS[@]}" || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: movie-sca
+          path: |
+            reports/sca/
+            reports/demo/sca/
+          if-no-files-found: warn
+          retention-days: 30
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag movie-review:${{ github.sha }} .
+      - run: mkdir -p reports/container
+      - uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: movie-review:${{ github.sha }}
+          format: json
+          output: reports/container/trivy.json
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: "0"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: movie-container
+          path: reports/container/
+          retention-days: 30
+
+  aggregate:
+    if: always()
+    needs: [sast, sca, container]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: movie-*
+          path: downloaded
+      - name: Reunir resultados reales
+        shell: bash
+        run: |
+          mkdir -p reports/{sast,sca,container}
+          find downloaded/movie-sast/sast -name semgrep.json \
+            -exec cp {} reports/sast/semgrep.json \; 2>/dev/null || true
+          find downloaded/movie-sca/sca -name dependency-check-report.json \
+            -exec cp {} reports/sca/dependency-check-report.json \; 2>/dev/null || true
+          find downloaded/movie-container -name trivy.json \
+            -exec cp {} reports/container/trivy.json \; 2>/dev/null || true
+      - name: Normalizar y evaluar
+        run: |
+          python scripts/normalize_findings.py --commit "${{ github.sha }}"
+          python scripts/mock_remediation.py
+          python scripts/evaluate_policy.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: movie-security-report-${{ github.sha }}
+          path: reports/
+          retention-days: 30

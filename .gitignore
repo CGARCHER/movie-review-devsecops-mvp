@@ -1,0 +1,8 @@
+target/
+reports/
+data/
+.env
+.idea/
+.vscode/
+*.iml
+.docker-config/

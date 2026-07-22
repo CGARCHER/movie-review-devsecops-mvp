@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Movie Review</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header>
+    <p class="eyebrow">TFM · DevSecOps</p>
+    <h1>Películas y reseñas</h1>
+    <p>Aplicación de referencia para demostrar el pipeline de seguridad.</p>
+</header>
+
+<main>
+    <section class="panel">
+        <h2>Dar de alta una película</h2>
+        <form id="movie-form">
+            <label>Título<input name="title" maxlength="150" required></label>
+            <label>Año<input name="releaseYear" type="number" min="1888" max="2100" required></label>
+            <label>Género<input name="genre" maxlength="60" required></label>
+            <button type="submit">Guardar película</button>
+        </form>
+        <p id="movie-message" class="message" aria-live="polite"></p>
+    </section>
+
+    <section>
+        <div class="section-heading">
+            <h2>Catálogo</h2>
+            <button id="reload" class="secondary" type="button">Actualizar</button>
+        </div>
+        <div id="movies" class="movie-grid"></div>
+    </section>
+</main>
+
+<footer>Cipriano García Hernández</footer>
+
+<template id="movie-template">
+    <article class="movie-card">
+        <div>
+            <span class="genre"></span>
+            <h3 class="title"></h3>
+            <p><span class="year"></span> · <span class="rating"></span></p>
+        </div>
+        <form class="review-form">
+            <h4>Añadir reseña</h4>
+            <label>Nombre<input name="author" maxlength="80" required></label>
+            <label>Puntuación
+                <select name="rating" required>
+                    <option value="5">5 — Excelente</option>
+                    <option value="4">4 — Muy buena</option>
+                    <option value="3">3 — Correcta</option>
+                    <option value="2">2 — Mejorable</option>
+                    <option value="1">1 — Mala</option>
+                </select>
+            </label>
+            <label>Comentario<textarea name="comment" maxlength="1000" required></textarea></label>
+            <button type="submit">Publicar reseña</button>
+            <p class="message" aria-live="polite"></p>
+        </form>
+        <div class="reviews"></div>
+    </article>
+</template>
+
+<script src="/app.js" defer></script>
+</body>
+</html>

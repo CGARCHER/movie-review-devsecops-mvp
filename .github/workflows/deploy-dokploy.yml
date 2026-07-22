@@ -1,0 +1,31 @@
+name: Deploy to Dokploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Entorno de destino
+        required: true
+        type: choice
+        options: [staging, production]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: movie-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Comprobar configuracion
+        env:
+          DOKPLOY_DEPLOY_WEBHOOK: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}
+        run: test -n "$DOKPLOY_DEPLOY_WEBHOOK"
+      - name: Solicitar despliegue
+        env:
+          DOKPLOY_DEPLOY_WEBHOOK: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}
+        run: curl --fail-with-body --silent --show-error --retry 3 -X POST "$DOKPLOY_DEPLOY_WEBHOOK"

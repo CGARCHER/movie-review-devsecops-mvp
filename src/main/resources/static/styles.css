@@ -1,0 +1,130 @@
+:root {
+    color-scheme: light;
+    --uned-green: #03473a;
+    --uned-green-dark: #02352c;
+    --uned-green-light: #e4f1ee;
+    --uned-black: #17342e;
+    --uned-gray: #5d6268;
+    --uned-border: #d9dde2;
+    --uned-background: #f3f4f5;
+    font-family: Arial, Helvetica, sans-serif;
+    color: var(--uned-black);
+    background: var(--uned-background);
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--uned-background);
+}
+
+header {
+    position: relative;
+    overflow: hidden;
+    padding: 3.5rem max(1.5rem, calc((100% - 1100px) / 2));
+    color: white;
+    background: var(--uned-green);
+    border-bottom: 7px solid white;
+}
+
+header::after {
+    position: absolute;
+    right: -6rem;
+    bottom: -9rem;
+    width: 23rem;
+    height: 23rem;
+    content: "";
+    border: 2.5rem solid rgb(255 255 255 / 12%);
+    border-radius: 50%;
+}
+
+header h1,
+header p { position: relative; z-index: 1; }
+header h1 { margin: .25rem 0; font-size: clamp(2rem, 6vw, 4rem); letter-spacing: -.03em; }
+header p:not(.eyebrow) { max-width: 42rem; margin-bottom: 0; font-size: 1.08rem; }
+.eyebrow { color: #d8eee8; text-transform: uppercase; letter-spacing: .13em; font-weight: 700; }
+
+main { width: min(1100px, calc(100% - 2rem)); margin: 2rem auto 4rem; }
+
+.panel,
+.movie-card {
+    background: white;
+    border: 1px solid var(--uned-border);
+    border-radius: 4px;
+    box-shadow: 0 8px 22px rgb(31 31 31 / 9%);
+}
+
+.panel { padding: 1.5rem; margin-bottom: 2.5rem; border-top: 5px solid var(--uned-green); }
+h2 { color: var(--uned-black); }
+form { display: grid; gap: 1rem; }
+.panel form { grid-template-columns: repeat(3, 1fr) auto; align-items: end; }
+label { display: grid; gap: .4rem; font-weight: 700; font-size: .92rem; }
+
+input,
+select,
+textarea {
+    width: 100%;
+    padding: .72rem .8rem;
+    color: var(--uned-black);
+    background: white;
+    border: 1px solid #aeb4bb;
+    border-radius: 3px;
+    font: inherit;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+    outline: 3px solid rgb(3 71 58 / 22%);
+    border-color: var(--uned-green);
+}
+
+textarea { min-height: 90px; resize: vertical; }
+
+button {
+    padding: .78rem 1rem;
+    color: white;
+    background: var(--uned-green);
+    border: 0;
+    border-radius: 3px;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+button:hover { background: var(--uned-green-dark); }
+button:focus-visible { outline: 3px solid rgb(3 71 58 / 35%); outline-offset: 2px; }
+
+.secondary {
+    color: var(--uned-green-dark);
+    background: white;
+    border: 1px solid var(--uned-green);
+}
+
+.secondary:hover { color: white; background: var(--uned-green); }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.movie-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.25rem; }
+.movie-card { padding: 1.35rem; border-top: 4px solid var(--uned-green); }
+.movie-card h3 { color: var(--uned-green-dark); font-size: 1.55rem; margin: .45rem 0; }
+.movie-card h4 { margin-bottom: 0; }
+.genre { display: inline-block; color: var(--uned-green-dark); background: var(--uned-green-light); padding: .25rem .55rem; border-radius: 3px; font-size: .82rem; font-weight: 700; }
+.review-form { padding: 1rem 0; border-top: 1px solid var(--uned-border); border-bottom: 1px solid var(--uned-border); }
+.review { margin-top: 1rem; padding-left: .8rem; border-left: 3px solid var(--uned-green); }
+.review p { margin: .25rem 0; }
+.message { min-height: 1.2rem; color: var(--uned-green-dark); }
+.empty { padding: 2rem; text-align: center; color: var(--uned-gray); background: white; border-radius: 4px; }
+
+footer {
+    padding: 1.5rem;
+    color: white;
+    background: var(--uned-green);
+    border-top: 1px solid rgb(255 255 255 / 30%);
+    text-align: center;
+    font-size: .9rem;
+}
+
+@media (max-width: 760px) {
+    .panel form { grid-template-columns: 1fr; }
+    .section-heading { align-items: flex-start; flex-direction: column; }
+}

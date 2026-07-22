@@ -1,0 +1,38 @@
+services:
+  database:
+    image: postgres:17-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: movies
+      POSTGRES_USER: ${POSTGRES_USER:-movies}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
+    volumes:
+      - movie-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [backend]
+
+  app:
+    build: .
+    image: movie-review:local
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: jdbc:postgresql://database:5432/movies
+      DATABASE_USER: ${POSTGRES_USER:-movies}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
+      DDL_AUTO: update
+    depends_on:
+      database:
+        condition: service_healthy
+    networks: [backend]
+
+networks:
+  backend:
+
+volumes:
+  movie-data:

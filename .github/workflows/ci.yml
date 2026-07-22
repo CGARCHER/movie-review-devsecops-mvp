@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: movie-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Compilar y probar
+        run: mvn --batch-mode --no-transfer-progress clean verify
+      - name: Guardar JAR y resultados
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-ci-${{ github.sha }}
+          path: |
+            target/*.jar
+            target/surefire-reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construir imagen
+        run: docker build --tag movie-review:${{ github.sha }} .
+      - name: Comprobar usuario de ejecucion
+        run: |
+          test "$(docker image inspect movie-review:${{ github.sha }} --format '{{.Config.User}}')" = "spring:spring"
