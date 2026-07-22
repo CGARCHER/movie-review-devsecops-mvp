@@ -89,7 +89,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build --tag movie-review:${{ github.sha }} .
       - run: mkdir -p reports/container
-      - uses: aquasecurity/trivy-action@0.24.0
+      - uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: movie-review:${{ github.sha }}
           trivy-version: v0.54.1
