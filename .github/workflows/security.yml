@@ -132,10 +132,14 @@ jobs:
         run: |
           python scripts/normalize_findings.py --commit "${{ github.sha }}"
           python scripts/mock_remediation.py
-          python scripts/evaluate_policy.py
+          python scripts/evaluate_policy.py --enforce
       - name: Publicar resumen visual de seguridad
         if: always()
         shell: bash
+        env:
+          SAST_RESULT: ${{ needs.sast.result }}
+          SCA_RESULT: ${{ needs.sca.result }}
+          CONTAINER_RESULT: ${{ needs.container.result }}
         run: |
           python - <<'PY'
           import json
@@ -151,6 +155,14 @@ jobs:
           counts = summary.get("bySeverity", {})
           findings = findings_data.get("findings", [])
           status = decision_data.get("status", "UNKNOWN")
+          analyzer_results = {
+              "SAST": os.environ.get("SAST_RESULT", "unknown"),
+              "SCA": os.environ.get("SCA_RESULT", "unknown"),
+              "Container": os.environ.get("CONTAINER_RESULT", "unknown"),
+          }
+          technical_failure = any(result != "success" for result in analyzer_results.values())
+          if technical_failure:
+              status = "BLOCKED"
           status_icon = {
               "APPROVED": "✅",
               "REVIEW_REQUIRED": "⚠️",
@@ -174,6 +186,10 @@ jobs:
           lines.extend([
               "",
               f"**Total de hallazgos:** {summary.get('total', len(findings))}",
+              "",
+              "**Resultado de los analizadores:** " + ", ".join(
+                  f"{name}={result}" for name, result in analyzer_results.items()
+              ),
               "",
               "## Detalle de hallazgos",
               "",
@@ -200,7 +216,13 @@ jobs:
           ])
           Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
+      - name: Bloquear si falla un analizador
+        if: needs.sast.result != 'success' || needs.sca.result != 'success' || needs.container.result != 'success'
+        run: |
+          echo "No se permite aprobar el despliegue: al menos un analizador no terminó correctamente."
+          exit 1
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: movie-security-report-${{ github.sha }}
           path: reports/
