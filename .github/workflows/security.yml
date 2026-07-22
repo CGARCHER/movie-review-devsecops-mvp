@@ -89,15 +89,19 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build --tag movie-review:${{ github.sha }} .
       - run: mkdir -p reports/container
-      - uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          image-ref: movie-review:${{ github.sha }}
-          version: v0.54.1
-          format: json
-          output: reports/container/trivy.json
-          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
-          ignore-unfixed: false
-          exit-code: "0"
+      - name: Analizar imagen con Trivy
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${{ github.workspace }}/reports/container:/reports" \
+            aquasec/trivy:0.65.0 \
+            image \
+            --format json \
+            --output /reports/trivy.json \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --ignore-unfixed=false \
+            --exit-code 0 \
+            movie-review:${{ github.sha }}
       - uses: actions/upload-artifact@v4
         with:
           name: movie-container
