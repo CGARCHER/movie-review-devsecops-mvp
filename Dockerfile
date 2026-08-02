@@ -6,7 +6,7 @@ RUN --mount=type=cache,target=/root/.m2 mvn --batch-mode --no-transfer-progress 
 COPY src src
 RUN --mount=type=cache,target=/root/.m2 mvn --batch-mode --no-transfer-progress clean package
 
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 RUN addgroup -S spring && adduser -S spring -G spring
 WORKDIR /app
 COPY --from=build --chown=spring:spring /workspace/target/movie-review-*.jar app.jar
