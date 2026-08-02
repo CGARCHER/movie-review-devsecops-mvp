@@ -19,22 +19,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.13"
-      - run: pip install --disable-pip-version-check semgrep
+      - run: pip install --disable-pip-version-check semgrep==1.170.0
       - name: Analizar codigo real
         run: |
           mkdir -p reports/sast
           semgrep scan --config security/semgrep.yml --json \
-            --output reports/sast/semgrep.json src || true
+            --output reports/sast/semgrep.json src
+          test -s reports/sast/semgrep.json
       - name: Validar fixture SAST
         run: |
           mkdir -p reports/demo/sast
           semgrep scan --config security/semgrep.yml --json \
-            --output reports/demo/sast/semgrep-fixture.json security-fixtures/sast || true
-      - uses: actions/upload-artifact@v4
+            --output reports/demo/sast/semgrep-fixture.json security-fixtures/sast
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: movie-sast
           path: |
@@ -46,8 +48,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           distribution: temurin
           java-version: "17"
@@ -59,9 +61,10 @@ jobs:
           NVD_ARGS=()
           if [ -n "$NVD_API_KEY" ]; then NVD_ARGS=(-DnvdApiKey="$NVD_API_KEY"); fi
           mvn --batch-mode --no-transfer-progress package -DskipTests \
-            org.owasp:dependency-check-maven:check "${NVD_ARGS[@]}" || true
+            org.owasp:dependency-check-maven:check "${NVD_ARGS[@]}"
           mkdir -p reports/sca
           cp target/dependency-check/dependency-check-report.* reports/sca/ 2>/dev/null || true
+          test -s reports/sca/dependency-check-report.json
       - name: Validar fixture SCA
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
@@ -72,8 +75,9 @@ jobs:
           mvn --batch-mode --no-transfer-progress -f security-fixtures/sca/pom.xml \
             org.owasp:dependency-check-maven:12.1.3:check \
             -Dformat=JSON -DoutputDirectory="${PWD}/reports/demo/sca" \
-            -DfailBuildOnCVSS=11 "${NVD_ARGS[@]}" || true
-      - uses: actions/upload-artifact@v4
+            -DfailBuildOnCVSS=11 "${NVD_ARGS[@]}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: movie-sca
           path: |
@@ -86,7 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: docker build --tag movie-review:${{ github.sha }} .
       - run: mkdir -p reports/container
       - name: Analizar imagen con Trivy
@@ -102,7 +106,9 @@ jobs:
             --ignore-unfixed=false \
             --exit-code 0 \
             movie-review:${{ github.sha }}
-      - uses: actions/upload-artifact@v4
+          test -s reports/container/trivy.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: movie-container
           path: reports/container/
@@ -113,8 +119,9 @@ jobs:
     needs: [sast, sca, container]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        continue-on-error: true
         with:
           pattern: movie-*
           path: downloaded
@@ -122,14 +129,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p reports/{sast,sca,container}
-          find downloaded/movie-sast/sast -name semgrep.json \
+          find downloaded/movie-sast -name semgrep.json \
             -exec cp {} reports/sast/semgrep.json \; 2>/dev/null || true
-          find downloaded/movie-sca/sca -name dependency-check-report.json \
+          find downloaded/movie-sca -name dependency-check-report.json \
             -exec cp {} reports/sca/dependency-check-report.json \; 2>/dev/null || true
           find downloaded/movie-container -name trivy.json \
             -exec cp {} reports/container/trivy.json \; 2>/dev/null || true
       - name: Normalizar y evaluar
         run: |
+          python scripts/validate_reports.py
           python scripts/normalize_findings.py --commit "${{ github.sha }}"
           python scripts/mock_remediation.py
           python scripts/evaluate_policy.py --enforce
@@ -148,8 +156,10 @@ jobs:
 
           findings_path = Path("reports/normalized/findings.json")
           decision_path = Path("reports/normalized/decision.json")
+          analyzer_path = Path("reports/normalized/analyzer-status.json")
           findings_data = json.loads(findings_path.read_text(encoding="utf-8")) if findings_path.exists() else {}
           decision_data = json.loads(decision_path.read_text(encoding="utf-8")) if decision_path.exists() else {}
+          analyzer_data = json.loads(analyzer_path.read_text(encoding="utf-8")) if analyzer_path.exists() else {}
 
           summary = findings_data.get("summary", {})
           counts = summary.get("bySeverity", {})
@@ -161,12 +171,13 @@ jobs:
               "Container": os.environ.get("CONTAINER_RESULT", "unknown"),
           }
           technical_failure = any(result != "success" for result in analyzer_results.values())
-          if technical_failure:
-              status = "BLOCKED"
+          if technical_failure or analyzer_data.get("status") != "SUCCESS":
+              status = "ANALYSIS_ERROR"
           status_icon = {
               "APPROVED": "✅",
               "REVIEW_REQUIRED": "⚠️",
               "BLOCKED": "❌",
+              "ANALYSIS_ERROR": "❌",
           }.get(status, "❔")
 
           def cell(value):
@@ -185,7 +196,11 @@ jobs:
 
           lines.extend([
               "",
-              f"**Total de hallazgos:** {summary.get('total', len(findings))}",
+              f"**Instancias detectadas:** {summary.get('total', len(findings))}",
+              "",
+              f"**Problemas únicos:** {summary.get('uniqueIssues', len(findings))}",
+              "",
+              f"**Componentes afectados:** {summary.get('affectedComponents', 0)}",
               "",
               "**Resultado de los analizadores:** " + ", ".join(
                   f"{name}={result}" for name, result in analyzer_results.items()
@@ -194,6 +209,15 @@ jobs:
               "## Detalle de hallazgos",
               "",
           ])
+
+          analysis_errors = analyzer_data.get("errors", [])
+          if analysis_errors:
+              lines.extend([
+                  "## Errores del análisis",
+                  "",
+                  *[f"- {cell(error)}" for error in analysis_errors],
+                  "",
+              ])
 
           if findings:
               lines.extend([
@@ -217,11 +241,11 @@ jobs:
           Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
       - name: Bloquear si falla un analizador
-        if: needs.sast.result != 'success' || needs.sca.result != 'success' || needs.container.result != 'success'
+        if: always() && (needs.sast.result != 'success' || needs.sca.result != 'success' || needs.container.result != 'success')
         run: |
           echo "No se permite aprobar el despliegue: al menos un analizador no terminó correctamente."
           exit 1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: movie-security-report-${{ github.sha }}

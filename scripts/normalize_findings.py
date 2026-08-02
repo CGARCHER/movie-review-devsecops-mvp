@@ -12,6 +12,7 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 
 SEVERITY_MAP = {
@@ -34,6 +35,15 @@ def normalized_severity(value: str | None) -> str:
     if value in {"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"}:
         return value
     return SEVERITY_MAP.get(value, "INFO")
+
+
+def dependency_version(dependency: dict[str, Any]) -> str | None:
+    """Obtiene la versión desde el Package URL generado por Dependency-Check."""
+    for package in dependency.get("packages", []) or []:
+        package_id = package.get("id", "")
+        if "@" in package_id:
+            return unquote(package_id.rsplit("@", 1)[1].split("?", 1)[0])
+    return None
 
 
 def semgrep_findings(data: dict[str, Any], commit: str) -> list[dict[str, Any]]:
@@ -68,7 +78,8 @@ def dependency_check_findings(data: dict[str, Any], commit: str) -> list[dict[st
                 "category": "SCA",
                 "severity": normalized_severity(vulnerability.get("severity")),
                 "component": dependency.get("fileName"),
-                "version": None,
+                "version": dependency_version(dependency),
+                "fixedVersion": None,
                 "file": dependency.get("filePath"),
                 "line": None,
                 "description": vulnerability.get("description"),
@@ -115,6 +126,44 @@ def deduplicate(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(unique.values())
 
 
+def issue_key(finding: dict[str, Any]) -> tuple[Any, ...]:
+    """Agrupa instancias que requieren esencialmente la misma remediación."""
+    return (
+        finding.get("id"),
+        finding.get("category"),
+        finding.get("component"),
+        finding.get("version"),
+        finding.get("fixedVersion"),
+    )
+
+
+def summarize(findings: list[dict[str, Any]]) -> dict[str, Any]:
+    counts = {level: 0 for level in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")}
+    unique_counts = counts.copy()
+    unique_issues: dict[tuple[Any, ...], dict[str, Any]] = {}
+    affected_components: set[str] = set()
+
+    for finding in findings:
+        counts[finding["severity"]] += 1
+        unique_issues.setdefault(issue_key(finding), finding)
+        component = finding.get("component") or finding.get("file")
+        if component:
+            affected_components.add(str(component))
+
+    for finding in unique_issues.values():
+        unique_counts[finding["severity"]] += 1
+
+    return {
+        # total representa instancias. Se conserva para mantener compatibilidad
+        # con el dashboard y los informes ya generados.
+        "total": len(findings),
+        "uniqueIssues": len(unique_issues),
+        "affectedComponents": len(affected_components),
+        "bySeverity": counts,
+        "uniqueBySeverity": unique_counts,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--semgrep", type=Path, default=Path("reports/sast/semgrep.json"))
@@ -131,14 +180,10 @@ def main() -> None:
     findings.extend(trivy_findings(load(args.trivy), args.commit))
     findings = deduplicate(findings)
 
-    counts = {level: 0 for level in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")}
-    for finding in findings:
-        counts[finding["severity"]] += 1
-
     document = {
         "schemaVersion": "1.0",
         "commit": args.commit,
-        "summary": {"total": len(findings), "bySeverity": counts},
+        "summary": summarize(findings),
         "findings": findings,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
