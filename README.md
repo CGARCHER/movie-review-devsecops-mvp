@@ -117,9 +117,15 @@ GitHub CLI en Windows. El proyecto incluye un contenedor auxiliar con `gh` que
 busca la última ejecución terminada de `security.yml` y descarga el artefacto
 `movie-security-report-*`.
 
-Antes de utilizarlo hay que crear el fichero local `.secrets/github_token.txt` con
-un token de GitHub limitado al repositorio y con permiso `Actions: Read`. Este
-fichero está excluido de Git y del contexto de construcción de Docker.
+Antes de utilizarlo hay que crear dos ficheros locales:
+
+- `.secrets/github_token.txt`: token de GitHub limitado al repositorio y con
+  permiso `Actions: Read`.
+- `.secrets/ai_api_token.txt`: valor del Bearer Token configurado como
+  `AI_API_KEY` en el servicio de IA. El fichero contiene solo el valor, sin
+  escribir la palabra `Bearer`.
+
+Ambos ficheros están excluidos de Git y del contexto de construcción de Docker.
 
 En Windows:
 
@@ -146,5 +152,12 @@ El fichero `security_dashboard.cmd` realiza el proceso completo:
 3. Abre `http://localhost:8081` en el navegador.
 
 El dashboard muestra el estado de la política, el recuento por severidad, los
-datos del commit, los hallazgos filtrables y la remediación generada. Solo está
-pensado para el entorno local de desarrollo.
+datos del commit y los hallazgos filtrables. El botón `Explicar con IA` envía
+al servicio local únicamente el identificador y la posición del hallazgo. El
+servicio vuelve a cargar los datos desde el informe descargado, consulta la API
+de IA mediante HTTPS y guarda la respuesta en `reports/runs/<ejecución>/ai`.
+
+El Bearer Token nunca se entrega al navegador. El dashboard se publica en el
+puerto `8081` y está pensado para el entorno local de desarrollo. Las
+recomendaciones generadas deben revisarse manualmente antes de modificar el
+proyecto.

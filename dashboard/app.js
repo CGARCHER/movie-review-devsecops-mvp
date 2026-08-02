@@ -139,7 +139,7 @@ function renderFindings() {
   if (filtered.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 7;
+    cell.colSpan = 8;
     cell.textContent = "No hay hallazgos que coincidan con los filtros.";
     row.appendChild(cell);
     body.appendChild(row);
@@ -162,6 +162,15 @@ function renderFindings() {
     appendCell(row, finding.component ?? finding.file);
     appendCell(row, finding.description, "description-cell");
     appendCell(row, finding.fixedVersion);
+
+    const actionCell = document.createElement("td");
+    const aiButton = document.createElement("button");
+    aiButton.type = "button";
+    aiButton.className = "ai-button";
+    aiButton.textContent = "Explicar con IA";
+    aiButton.addEventListener("click", () => requestRemediation(finding, aiButton));
+    actionCell.appendChild(aiButton);
+    row.appendChild(actionCell);
     body.appendChild(row);
   }
 
@@ -176,6 +185,64 @@ function appendCell(row, value, className = "") {
     cell.className = className;
   }
   row.appendChild(cell);
+}
+
+function formatRemediation(result) {
+  return [
+    `Remediación asistida por IA — ${safeValue(result.findingId)}`,
+    "",
+    `Modelo: ${safeValue(result.model)}`,
+    "",
+    "Explicación",
+    safeValue(result.explanation),
+    "",
+    "Recomendación",
+    safeValue(result.recommendation),
+    "",
+    "Validación manual",
+    safeValue(result.validation),
+    "",
+    "Nota didáctica",
+    safeValue(result.learningNote),
+    "",
+    "La propuesta debe ser revisada por una persona antes de aplicarse.",
+  ].join("\n");
+}
+
+async function requestRemediation(finding, button) {
+  const status = byId("remediation-status");
+  const content = byId("remediation-content");
+
+  button.disabled = true;
+  button.textContent = "Consultando...";
+  status.textContent = `Analizando ${safeValue(finding.id)}`;
+
+  try {
+    const response = await fetch("/api/remediation", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Dashboard-Request": "1",
+      },
+      body: JSON.stringify({
+        findingIndex: finding.reportIndex,
+        findingId: finding.id,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error ?? "No se ha podido generar la remediación.");
+    }
+
+    content.textContent = formatRemediation(result);
+    status.textContent = "Remediación generada";
+    content.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (requestError) {
+    status.textContent = requestError.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Explicar con IA";
+  }
 }
 
 async function loadDashboard() {
@@ -203,7 +270,10 @@ async function loadDashboard() {
 
     const findingsDocument = findingsResult.value;
     allFindings = Array.isArray(findingsDocument.findings)
-      ? findingsDocument.findings
+      ? findingsDocument.findings.map((finding, reportIndex) => ({
+          ...finding,
+          reportIndex,
+        }))
       : [];
 
     const decision = decisionResult.status === "fulfilled"
@@ -219,10 +289,15 @@ async function loadDashboard() {
     populateToolFilter();
     renderFindings();
 
-    byId("remediation-content").textContent =
-      remediationResult.status === "fulfilled"
-        ? remediationResult.value
-        : "No hay datos de remediación disponibles.";
+    const remediationContent = remediationResult.status === "fulfilled"
+      ? remediationResult.value
+      : "No hay datos de remediación disponibles.";
+    byId("remediation-content").textContent = remediationContent;
+    byId("remediation-status").textContent = remediationContent.includes("modo simulado")
+      ? "Contenido simulado del pipeline"
+      : remediationResult.status === "fulfilled"
+        ? "Última remediación guardada"
+        : "";
   } catch (loadError) {
     allFindings = [];
     renderStatus("SIN DATOS");

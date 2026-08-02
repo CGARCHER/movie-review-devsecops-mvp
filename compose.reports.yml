@@ -34,8 +34,11 @@ services:
       GITHUB_WORKFLOW_FILE: security.yml
       GH_TOKEN_FILE: /run/secrets/github_token
       REPORT_ROOT: /workspace/reports
+      AI_API_URL: ${AI_API_URL:-https://ai-api.cgarcher.dev/api/v1/remediations}
+      AI_API_TOKEN_FILE: /run/secrets/ai_api_token
     secrets:
       - github_token
+      - ai_api_token
     volumes:
       - ./reports:/workspace/reports
     read_only: true
@@ -79,3 +82,5 @@ services:
 secrets:
   github_token:
     file: ./.secrets/github_token.txt
+  ai_api_token:
+    file: ./.secrets/ai_api_token.txt

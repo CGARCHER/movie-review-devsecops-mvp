@@ -11,6 +11,16 @@ if not exist ".secrets\github_token.txt" (
     exit /b 1
 )
 
+if not exist ".secrets\ai_api_token.txt" (
+    echo ERROR: falta el fichero .secrets\ai_api_token.txt
+    echo.
+    echo Guarda en ese fichero el Bearer Token configurado para la API de IA.
+    echo No escribas la palabra Bearer, solo el valor del token.
+    echo.
+    pause
+    exit /b 1
+)
+
 docker compose version >nul 2>&1
 if not errorlevel 1 (
     docker compose -f compose.reports.yml run --rm --build report-downloader

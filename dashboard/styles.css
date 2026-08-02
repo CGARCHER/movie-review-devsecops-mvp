@@ -282,6 +282,27 @@ select {
   opacity: 0.7;
 }
 
+.ai-button {
+  min-width: 116px;
+  padding: 7px 10px;
+  border: 1px solid var(--uned-green);
+  border-radius: 7px;
+  color: white;
+  background: var(--uned-green);
+  cursor: pointer;
+}
+
+.ai-button:hover,
+.ai-button:focus {
+  color: var(--uned-green);
+  background: white;
+}
+
+.ai-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .table-wrapper {
   overflow-x: auto;
 }
@@ -337,6 +358,11 @@ th {
   background: #173a31;
   font-family: Consolas, "Courier New", monospace;
   font-size: 0.84rem;
+}
+
+.remediation-status {
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .empty-message,

@@ -11,6 +11,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 import evaluate_policy  # noqa: E402
 import mock_remediation  # noqa: E402
 import normalize_findings  # noqa: E402
+import report_api  # noqa: E402
 import validate_reports  # noqa: E402
 
 
@@ -158,6 +159,68 @@ class MockRemediationTest(unittest.TestCase):
                 )
                 self.assertEqual(expected_code, code)
                 self.assertTrue(proposal)
+
+
+class ReportApiTest(unittest.TestCase):
+    def create_downloaded_report(self, directory: Path) -> Path:
+        run_name = "commit-run-123"
+        run_directory = directory / "runs" / run_name
+        normalized = run_directory / "normalized"
+        normalized.mkdir(parents=True)
+        (directory / "LATEST").write_text(run_name, encoding="utf-8")
+        (normalized / "findings.json").write_text(
+            json.dumps({
+                "findings": [
+                    {
+                        "id": "CVE-2021-44228",
+                        "severity": "CRITICAL",
+                        "tool": "dependency-check",
+                        "category": "SCA",
+                        "component": "log4j-core",
+                        "description": "Vulnerabilidad de prueba del cliente.",
+                        "fixedVersion": "2.17.1",
+                    }
+                ]
+            }),
+            encoding="utf-8",
+        )
+        return run_directory
+
+    def test_selected_finding_is_loaded_from_downloaded_report(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            report_root = Path(temporary)
+            run_directory = self.create_downloaded_report(report_root)
+            finding, selected_run = report_api.selected_finding(
+                0,
+                "CVE-2021-44228",
+                report_root,
+            )
+
+        self.assertEqual("CVE-2021-44228", finding["id"])
+        self.assertEqual(run_directory, selected_run)
+
+    def test_selected_finding_rejects_an_identifier_mismatch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            report_root = Path(temporary)
+            self.create_downloaded_report(report_root)
+            with self.assertRaises(report_api.RequestError):
+                report_api.selected_finding(0, "CVE-OTHER", report_root)
+
+    def test_remediation_payload_uses_only_normalized_fields(self):
+        payload = report_api.remediation_payload({
+            "id": "CVE-2021-44228",
+            "severity": "CRITICAL",
+            "tool": "dependency-check",
+            "category": "SCA",
+            "component": "log4j-core",
+            "description": "Descripción recibida del analizador.",
+            "fixedVersion": "2.17.1",
+            "references": ["https://example.invalid"],
+        })
+
+        self.assertEqual("CVE-2021-44228", payload["id"])
+        self.assertEqual("2.17.1", payload["fixedVersion"])
+        self.assertNotIn("references", payload)
 
 
 if __name__ == "__main__":

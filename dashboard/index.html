@@ -125,17 +125,24 @@
               <th>Componente o fichero</th>
               <th>Descripción</th>
               <th>Versión corregida</th>
+              <th>Ayuda</th>
             </tr>
           </thead>
           <tbody id="findings-body">
-            <tr><td colspan="7">No se han cargado informes.</td></tr>
+            <tr><td colspan="8">No se han cargado informes.</td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
     <section class="panel remediation-panel">
-      <h2>Remediación propuesta</h2>
+      <div class="section-heading">
+        <div>
+          <h2>Remediación asistida por IA</h2>
+          <p>Selecciona un hallazgo para solicitar una explicación educativa.</p>
+        </div>
+        <span id="remediation-status" class="remediation-status" aria-live="polite"></span>
+      </div>
       <pre id="remediation-content">No hay datos de remediación disponibles.</pre>
     </section>
 
