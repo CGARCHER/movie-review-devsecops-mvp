@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Security Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-content">
+      <div>
+        <h1>Security Dashboard</h1>
+        <p>Resultados del pipeline DevSecOps</p>
+      </div>
+      <div class="update-controls">
+        <button id="refresh-button" class="secondary-button" type="button">
+          Buscar último informe
+        </button>
+        <span id="update-message" class="update-message" aria-live="polite"></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <p class="notice">
+      El estado representa el resultado de la política definida para el proyecto.
+      No constituye una garantía absoluta de seguridad.
+    </p>
+
+    <section class="summary-grid" aria-label="Resumen de seguridad">
+      <article id="status-card" class="card status-card">
+        <span class="card-label">Estado de seguridad</span>
+        <strong id="security-status">SIN DATOS</strong>
+      </article>
+      <article class="card severity-card critical">
+        <span class="card-label">CRITICAL</span>
+        <strong id="count-critical">—</strong>
+      </article>
+      <article class="card severity-card high">
+        <span class="card-label">HIGH</span>
+        <strong id="count-high">—</strong>
+      </article>
+      <article class="card severity-card medium">
+        <span class="card-label">MEDIUM</span>
+        <strong id="count-medium">—</strong>
+      </article>
+      <article class="card severity-card low">
+        <span class="card-label">LOW</span>
+        <strong id="count-low">—</strong>
+      </article>
+      <article class="card severity-card info">
+        <span class="card-label">INFO</span>
+        <strong id="count-info">—</strong>
+      </article>
+    </section>
+
+    <section class="two-columns">
+      <article class="panel">
+        <h2>Hallazgos por severidad</h2>
+        <div id="severity-chart" class="severity-chart">
+          <p class="empty-message">Todavía no se han cargado datos.</p>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h2>Información del análisis</h2>
+        <dl class="analysis-data">
+          <div><dt>Commit</dt><dd id="analysis-commit">—</dd></div>
+          <div><dt>Ejecución</dt><dd id="analysis-run">—</dd></div>
+          <div><dt>Fecha</dt><dd id="analysis-date">—</dd></div>
+          <div><dt>Resultado</dt><dd id="analysis-conclusion">—</dd></div>
+          <div><dt>Instancias detectadas</dt><dd id="analysis-total">—</dd></div>
+          <div><dt>Problemas únicos</dt><dd id="analysis-unique">—</dd></div>
+          <div><dt>Componentes afectados</dt><dd id="analysis-components">—</dd></div>
+        </dl>
+        <a id="workflow-link" class="workflow-link hidden" href="#" target="_blank" rel="noreferrer">
+          Abrir ejecución en GitHub
+        </a>
+      </article>
+    </section>
+
+    <section class="panel findings-panel">
+      <div class="section-heading">
+        <div>
+          <h2>Detalle de hallazgos</h2>
+          <p id="visible-findings">0 hallazgos visibles</p>
+        </div>
+      </div>
+
+      <div class="filters">
+        <label>
+          <span>Buscar</span>
+          <input id="search-input" type="search"
+                 placeholder="CVE, paquete, fichero o descripción">
+        </label>
+        <label>
+          <span>Herramienta</span>
+          <select id="tool-filter">
+            <option value="">Todas</option>
+          </select>
+        </label>
+        <label>
+          <span>Severidad</span>
+          <select id="severity-filter">
+            <option value="">Todas</option>
+            <option value="CRITICAL">CRITICAL</option>
+            <option value="HIGH">HIGH</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="LOW">LOW</option>
+            <option value="INFO">INFO</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Herramienta</th>
+              <th>Categoría</th>
+              <th>Severidad</th>
+              <th>Componente o fichero</th>
+              <th>Descripción</th>
+              <th>Versión corregida</th>
+            </tr>
+          </thead>
+          <tbody id="findings-body">
+            <tr><td colspan="7">No se han cargado informes.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel remediation-panel">
+      <h2>Remediación propuesta</h2>
+      <pre id="remediation-content">No hay datos de remediación disponibles.</pre>
+    </section>
+
+    <p id="error-message" class="error-message hidden" role="alert"></p>
+  </main>
+
+  <footer>
+    <div class="container">
+      <span>Security Dashboard · Entorno de desarrollo</span>
+      <span>Cipriano García Hernández</span>
+    </div>
+  </footer>
+</body>
+</html>

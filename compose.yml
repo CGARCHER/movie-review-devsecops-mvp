@@ -1,12 +1,10 @@
 services:
   database:
     image: postgres:17-alpine
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_DB: movies
       POSTGRES_USER: ${POSTGRES_USER:-movies}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en Dokploy}
     volumes:
       - movie-data:/var/lib/postgresql/data
     healthcheck:
@@ -14,22 +12,41 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
     networks: [backend]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
 
   app:
     build: .
     image: movie-review:local
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     environment:
       DATABASE_URL: jdbc:postgresql://database:5432/movies
       DATABASE_USER: ${POSTGRES_USER:-movies}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
-      DDL_AUTO: update
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en Dokploy}
+      DDL_AUTO: ${DDL_AUTO:-update}
     depends_on:
       database:
         condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
     networks: [backend]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
 
 networks:
   backend:

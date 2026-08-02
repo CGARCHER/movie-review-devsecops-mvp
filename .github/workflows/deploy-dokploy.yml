@@ -23,8 +23,9 @@ jobs:
     environment: ${{ inputs.environment }}
     steps:
       - name: Verificar seguridad antes de producción
+        id: security-run
         if: inputs.environment == 'production'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const result = await github.rest.actions.listWorkflowRuns({
@@ -45,8 +46,34 @@ jobs:
             } else if (run.conclusion !== 'success') {
               core.setFailed(`El análisis de seguridad no está aprobado: ${run.conclusion}. Ejecución: ${run.html_url}`);
             } else {
+              core.setOutput('run-id', String(run.id));
               core.info(`Análisis de seguridad aprobado: ${run.html_url}`);
             }
+      - name: Descargar decisión de seguridad
+        if: inputs.environment == 'production'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: movie-security-report-${{ github.sha }}
+          path: security-report
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.security-run.outputs.run-id }}
+          github-token: ${{ github.token }}
+      - name: Exigir estado APPROVED
+        if: inputs.environment == 'production'
+        shell: bash
+        run: |
+          DECISION="$(find security-report -name decision.json -print -quit)"
+          if [ -z "$DECISION" ]; then
+            echo "No se encuentra decision.json en el informe de seguridad."
+            exit 1
+          fi
+
+          STATUS="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("status", "UNKNOWN"))' "$DECISION")"
+          echo "Estado de la política para ${{ github.sha }}: $STATUS"
+          if [ "$STATUS" != "APPROVED" ]; then
+            echo "Producción requiere un estado APPROVED."
+            exit 1
+          fi
       - name: Comprobar configuracion
         env:
           DOKPLOY_DEPLOY_WEBHOOK: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}
