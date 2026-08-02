@@ -35,7 +35,7 @@ jobs:
           mkdir -p reports/demo/sast
           semgrep scan --config security/semgrep.yml --json \
             --output reports/demo/sast/semgrep-fixture.json security-fixtures/sast
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: movie-sast
@@ -89,7 +89,7 @@ jobs:
             org.owasp:dependency-check-maven:12.2.2:check \
             -Dformat=JSON -DoutputDirectory="${PWD}/reports/demo/sca" \
             -DfailBuildOnCVSS=11 "${NVD_ARGS[@]}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: movie-sca
@@ -120,7 +120,7 @@ jobs:
             --exit-code 0 \
             movie-review:${{ github.sha }}
           test -s reports/container/trivy.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: movie-container
@@ -258,7 +258,7 @@ jobs:
         run: |
           echo "No se permite aprobar el despliegue: al menos un analizador no terminó correctamente."
           exit 1
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: movie-security-report-${{ github.sha }}
