@@ -6,3 +6,14 @@ data/
 .vscode/
 *.iml
 .docker-config/
+.secrets/
+
+# Ficheros temporales de Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Documentacion y ficheros de trabajo locales del TFM
+work/
+*.docx
+~$*
