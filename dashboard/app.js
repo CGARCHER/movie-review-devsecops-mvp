@@ -187,31 +187,34 @@ function appendCell(row, value, className = "") {
   row.appendChild(cell);
 }
 
-function formatRemediation(result) {
-  return [
-    `Remediación asistida por IA — ${safeValue(result.findingId)}`,
-    "",
-    `Modelo: ${safeValue(result.model)}`,
-    "",
-    "Explicación",
-    safeValue(result.explanation),
-    "",
-    "Recomendación",
-    safeValue(result.recommendation),
-    "",
-    "Validación manual",
-    safeValue(result.validation),
-    "",
-    "Nota didáctica",
-    safeValue(result.learningNote),
-    "",
-    "La propuesta debe ser revisada por una persona antes de aplicarse.",
-  ].join("\n");
+function renderRemediation(result, finding) {
+  const resultPanel = byId("remediation-result");
+  const emptyMessage = byId("remediation-empty");
+  const severity = safeValue(finding.severity, "INFO").toUpperCase();
+
+  byId("remediation-severity").className =
+    `severity-badge ${severity.toLowerCase()}`;
+  byId("remediation-severity").textContent = severity;
+  byId("remediation-finding-id").textContent = safeValue(result.findingId);
+  byId("remediation-meta").textContent =
+    `${safeValue(finding.tool)} \u00b7 ${safeValue(finding.component ?? finding.file)} \u00b7 Modelo: ${safeValue(result.model)}`;
+  byId("remediation-explanation").textContent = safeValue(result.explanation);
+  byId("remediation-recommendation").textContent = safeValue(result.recommendation);
+  byId("remediation-validation").textContent = safeValue(result.validation);
+  byId("remediation-learning").textContent = safeValue(result.learningNote);
+
+  emptyMessage.classList.add("hidden");
+  resultPanel.classList.remove("hidden");
+}
+
+function showRemediationEmpty(message) {
+  byId("remediation-empty").textContent = message;
+  byId("remediation-empty").classList.remove("hidden");
+  byId("remediation-result").classList.add("hidden");
 }
 
 async function requestRemediation(finding, button) {
   const status = byId("remediation-status");
-  const content = byId("remediation-content");
 
   button.disabled = true;
   button.textContent = "Consultando...";
@@ -234,9 +237,9 @@ async function requestRemediation(finding, button) {
       throw new Error(result.error ?? "No se ha podido generar la remediación.");
     }
 
-    content.textContent = formatRemediation(result);
+    renderRemediation(result, finding);
     status.textContent = "Remediación generada";
-    content.scrollIntoView({ behavior: "smooth", block: "start" });
+    byId("remediation-content").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (requestError) {
     status.textContent = requestError.message;
   } finally {
@@ -289,15 +292,13 @@ async function loadDashboard() {
     populateToolFilter();
     renderFindings();
 
-    const remediationContent = remediationResult.status === "fulfilled"
-      ? remediationResult.value
-      : "No hay datos de remediación disponibles.";
-    byId("remediation-content").textContent = remediationContent;
-    byId("remediation-status").textContent = remediationContent.includes("modo simulado")
-      ? "Contenido simulado del pipeline"
-      : remediationResult.status === "fulfilled"
-        ? "Última remediación guardada"
-        : "";
+    const hasSavedRemediation = remediationResult.status === "fulfilled";
+    showRemediationEmpty(hasSavedRemediation
+      ? "Existe una remediación guardada. Selecciona un hallazgo para consultarla de nuevo."
+      : "Selecciona un hallazgo y pulsa «Explicar con IA» para ver una orientación.");
+    byId("remediation-status").textContent = hasSavedRemediation
+      ? "Última remediación guardada"
+      : "";
   } catch (loadError) {
     allFindings = [];
     renderStatus("SIN DATOS");
@@ -345,4 +346,3 @@ byId("tool-filter").addEventListener("change", renderFindings);
 byId("severity-filter").addEventListener("change", renderFindings);
 
 loadDashboard();
-setInterval(loadDashboard, 60000);

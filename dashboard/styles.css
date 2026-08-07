@@ -346,18 +346,69 @@ th {
   max-width: 430px;
 }
 
-.remediation-panel pre {
-  max-height: 420px;
+.remediation-content {
+  min-height: 160px;
+}
+
+.remediation-empty {
   margin: 0;
+  color: var(--muted);
+}
+
+.remediation-finding {
   padding: 16px;
-  overflow: auto;
-  border-radius: 8px;
-  white-space: pre-wrap;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fbfdfc;
+}
+
+.remediation-finding strong {
+  margin-left: 8px;
+  font-size: 1.3rem;
+}
+
+.remediation-meta {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.remediation-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.remediation-card {
+  min-height: 135px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: white;
+}
+
+.remediation-card h3 {
+  margin: 0 0 9px;
+  color: var(--uned-green);
+  font-size: 1rem;
+}
+
+.remediation-card p {
+  margin: 0;
   overflow-wrap: anywhere;
-  color: #e5f2ee;
-  background: #173a31;
-  font-family: Consolas, "Courier New", monospace;
-  font-size: 0.84rem;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.remediation-note {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-left: 4px solid var(--uned-green);
+  border-radius: 5px;
+  color: var(--muted);
+  background: var(--uned-green-light);
+  font-size: 0.88rem;
 }
 
 .remediation-status {
@@ -422,7 +473,8 @@ footer .container {
 
   .summary-grid,
   .two-columns,
-  .filters {
+  .filters,
+  .remediation-grid {
     grid-template-columns: 1fr;
   }
 

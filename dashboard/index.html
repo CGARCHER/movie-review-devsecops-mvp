@@ -143,7 +143,42 @@
         </div>
         <span id="remediation-status" class="remediation-status" aria-live="polite"></span>
       </div>
-      <pre id="remediation-content">No hay datos de remediación disponibles.</pre>
+      <div id="remediation-content" class="remediation-content" aria-live="polite">
+        <p id="remediation-empty" class="remediation-empty">
+          Selecciona un hallazgo y pulsa &laquo;Explicar con IA&raquo; para ver una orientaci&oacute;n.
+        </p>
+        <article id="remediation-result" class="remediation-result hidden">
+          <div class="remediation-finding">
+            <div>
+              <span id="remediation-severity" class="severity-badge">INFO</span>
+              <strong id="remediation-finding-id">-</strong>
+            </div>
+            <p id="remediation-meta" class="remediation-meta">-</p>
+          </div>
+          <div class="remediation-grid">
+            <section class="remediation-card">
+              <h3>1. Qu&eacute; ocurre</h3>
+              <p id="remediation-explanation">-</p>
+            </section>
+            <section class="remediation-card">
+              <h3>2. Qu&eacute; hacer</h3>
+              <p id="remediation-recommendation">-</p>
+            </section>
+            <section class="remediation-card">
+              <h3>3. C&oacute;mo validarlo</h3>
+              <p id="remediation-validation">-</p>
+            </section>
+            <section class="remediation-card">
+              <h3>4. Qu&eacute; aprender</h3>
+              <p id="remediation-learning">-</p>
+            </section>
+          </div>
+          <p class="remediation-note">
+            La IA propone una orientaci&oacute;n educativa. Revisa la recomendaci&oacute;n antes de aplicarla;
+            no se modifica el c&oacute;digo ni se ejecutan comandos autom&aacute;ticamente.
+          </p>
+        </article>
+      </div>
     </section>
 
     <p id="error-message" class="error-message hidden" role="alert"></p>

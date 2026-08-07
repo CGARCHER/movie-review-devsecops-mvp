@@ -115,6 +115,7 @@ def call_ai_api(payload: dict[str, Any]) -> dict[str, Any]:
         headers={
             "Authorization": f"Bearer {read_ai_token()}",
             "Content-Type": "application/json",
+            "User-Agent": "movie-review-report-updater/1.0",
         },
         method="POST",
     )
