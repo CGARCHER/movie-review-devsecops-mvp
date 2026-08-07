@@ -1,46 +1,47 @@
-# Configuración asistida de GitHub
+# Configuración de seguridad en GitHub
 
-Este script prepara la estructura de ramas y aplica los rulesets incluidos en el proyecto.
+El proyecto incluye dos rulesets reutilizables para proteger las ramas `develop` y `main`. Su importación es manual para evitar el uso de un token con permisos administrativos.
 
-## 1. Crear un token temporal
+## 1. Crear la rama develop
 
-Crea un token de acceso de grano fino limitado al repositorio que quieras configurar. Necesita estos permisos:
+Si el repositorio todavía no tiene la rama `develop`, créala desde `main` en GitHub.
 
-- `Administration`: lectura y escritura.
-- `Contents`: lectura y escritura.
+## 2. Importar los rulesets
 
-No guardes el token en ningún fichero del proyecto.
-
-## 2. Ejecutar el script
-
-Desde la raíz del repositorio, ejecuta:
-
-```powershell
-.\scripts\configure-github.ps1
-```
-
-Si no existe la variable `GITHUB_TOKEN`, el script solicitará el token de forma oculta.
-
-## 3. Operaciones realizadas
-
-El script:
-
-1. Detecta el repositorio mediante el remoto `origin`.
-2. Crea `develop` desde la rama principal si todavía no existe.
-3. Comprueba que los checks definidos en los rulesets existen en `ci.yml`.
-4. Crea o actualiza el ruleset de `develop`.
-5. Crea o actualiza el ruleset de `main`.
-6. Confirma que ambos rulesets están activos.
-
-El script se puede ejecutar más de una vez. Si la rama y los rulesets ya existen, los revisa y actualiza sin duplicarlos.
-
-## 4. Comprobación manual
-
-Después de ejecutarlo, revisa en GitHub:
+En el repositorio, accede a:
 
 ```text
 Settings → Rules → Rulesets
 ```
 
-Finalmente, crea una rama `feature/*` y abre una pull request hacia `develop` para comprobar el funcionamiento de la integración continua.
+Selecciona `New ruleset` y después `Import a ruleset`. Importa estos ficheros por separado:
 
+```text
+.github/rulesets/develop-protection.json
+.github/rulesets/main-protection.json
+```
+
+Antes de crear cada ruleset, comprueba que está activo y que protege la rama correspondiente.
+
+## 3. Reglas aplicadas
+
+Los dos rulesets:
+
+- Impiden eliminar la rama protegida.
+- Impiden actualizaciones que no sean de avance rápido.
+- Exigen realizar los cambios mediante una pull request.
+- Exigen que terminen correctamente los checks `security-script-tests`, `build-test` y `docker-build`.
+
+## 4. Comprobar el funcionamiento
+
+Crea una rama `feature/*` y abre una pull request hacia `develop`. GitHub debe ejecutar los checks obligatorios antes de permitir la integración.
+
+## 5. Token del dashboard
+
+El único token almacenado localmente por este proyecto es el utilizado por el dashboard para descargar los informes de GitHub Actions:
+
+```text
+.secrets/github_token.txt
+```
+
+Este fichero está excluido de Git y no debe subirse al repositorio.
