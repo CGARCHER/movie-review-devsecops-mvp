@@ -1,7 +1,10 @@
 import json
 import sys
 import tempfile
+import threading
 import unittest
+import urllib.request
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 
@@ -221,6 +224,37 @@ class ReportApiTest(unittest.TestCase):
         self.assertEqual("CVE-2021-44228", payload["id"])
         self.assertEqual("2.17.1", payload["fixedVersion"])
         self.assertNotIn("references", payload)
+
+    def test_dashboard_server_serves_the_interface(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            dashboard_root = Path(temporary)
+            (dashboard_root / "index.html").write_text(
+                "<h1>Security Dashboard</h1>",
+                encoding="utf-8",
+            )
+            previous_root = report_api.DASHBOARD_ROOT
+            report_api.DASHBOARD_ROOT = dashboard_root
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                report_api.ReportHandler,
+            )
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{server.server_port}/",
+                    timeout=2,
+                ) as response:
+                    body = response.read().decode("utf-8")
+                    content_policy = response.headers["Content-Security-Policy"]
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+                report_api.DASHBOARD_ROOT = previous_root
+
+        self.assertIn("Security Dashboard", body)
+        self.assertIn("default-src 'self'", content_policy)
 
 
 if __name__ == "__main__":

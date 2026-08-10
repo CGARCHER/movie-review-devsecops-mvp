@@ -1,12 +1,10 @@
 services:
   database:
     image: postgres:17-alpine
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_DB: movies
       POSTGRES_USER: ${POSTGRES_USER:-movies}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en Dokploy}
     volumes:
       - movie-data:/var/lib/postgresql/data
     healthcheck:
@@ -14,33 +12,52 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
     networks: [backend]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
 
   app:
     build: .
-    image: movie-review:local
-    ports:
-      - "8080:8080"
+    image: movie-review:dev
+    expose:
+      - "8080"
     environment:
       DATABASE_URL: jdbc:postgresql://database:5432/movies
       DATABASE_USER: ${POSTGRES_USER:-movies}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
-      DDL_AUTO: update
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en Dokploy}
+      DDL_AUTO: ${DDL_AUTO:-update}
     depends_on:
       database:
         condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
     networks: [backend]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
 
   security-dashboard:
     build:
       context: .
       dockerfile: docker/security-dashboard/Dockerfile
-    image: movie-review-security-dashboard:local
-    ports:
-      - "8081:8080"
+    image: movie-review-security-dashboard:dev
+    expose:
+      - "8080"
     environment:
       GITHUB_REPOSITORY: CGARCHER/movie-review-devsecops-mvp
       GITHUB_WORKFLOW_FILE: security.yml
+      GITHUB_BRANCH: develop
       GH_TOKEN_FILE: /run/secrets/github_token
       REPORT_ROOT: /workspace/reports
       AI_API_URL: ${AI_API_URL:-https://ai-api.cgarcher.dev/api/v1/remediations}
@@ -49,13 +66,15 @@ services:
       - github_token
       - ai_api_token
     volumes:
-      - ./reports:/workspace/reports
+      - security-reports:/workspace/reports
     read_only: true
     tmpfs:
       - /tmp:size=32m,noexec,nosuid
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
+    restart: unless-stopped
+    networks: [backend]
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health >/dev/null || exit 1"]
       interval: 10s
@@ -67,9 +86,10 @@ networks:
 
 volumes:
   movie-data:
+  security-reports:
 
 secrets:
   github_token:
-    file: ./.secrets/github_token.txt
+    environment: GH_TOKEN
   ai_api_token:
-    file: ./.secrets/ai_api_token.txt
+    environment: AI_API_TOKEN

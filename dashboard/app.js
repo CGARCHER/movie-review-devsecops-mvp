@@ -1,7 +1,9 @@
 "use strict";
 
 const severityOrder = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"];
+const findingsPerPage = 10;
 let allFindings = [];
+let currentFindingsPage = 1;
 
 function byId(id) {
   return document.getElementById(id);
@@ -113,7 +115,11 @@ function populateToolFilter() {
   select.value = currentValue;
 }
 
-function renderFindings() {
+function renderFindings(resetPage = false) {
+  if (resetPage) {
+    currentFindingsPage = 1;
+  }
+
   const search = byId("search-input").value.trim().toLowerCase();
   const tool = byId("tool-filter").value;
   const severity = byId("severity-filter").value;
@@ -136,6 +142,11 @@ function renderFindings() {
   const body = byId("findings-body");
   body.replaceChildren();
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / findingsPerPage));
+  currentFindingsPage = Math.min(currentFindingsPage, totalPages);
+  const firstFinding = (currentFindingsPage - 1) * findingsPerPage;
+  const pageFindings = filtered.slice(firstFinding, firstFinding + findingsPerPage);
+
   if (filtered.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
@@ -145,7 +156,7 @@ function renderFindings() {
     body.appendChild(row);
   }
 
-  for (const finding of filtered) {
+  for (const finding of pageFindings) {
     const row = document.createElement("tr");
     appendCell(row, finding.id);
     appendCell(row, finding.tool);
@@ -167,7 +178,7 @@ function renderFindings() {
     const aiButton = document.createElement("button");
     aiButton.type = "button";
     aiButton.className = "ai-button";
-    aiButton.textContent = "Explicar con IA";
+    aiButton.textContent = "Cómo corregirlo";
     aiButton.addEventListener("click", () => requestRemediation(finding, aiButton));
     actionCell.appendChild(aiButton);
     row.appendChild(actionCell);
@@ -175,7 +186,11 @@ function renderFindings() {
   }
 
   byId("visible-findings").textContent =
-    `${filtered.length} de ${allFindings.length} hallazgos visibles`;
+    `${filtered.length} hallazgos`;
+  byId("page-information").textContent =
+    `Página ${currentFindingsPage} de ${totalPages}`;
+  byId("previous-page").disabled = currentFindingsPage === 1;
+  byId("next-page").disabled = currentFindingsPage === totalPages;
 }
 
 function appendCell(row, value, className = "") {
@@ -191,17 +206,49 @@ function renderRemediation(result, finding) {
   const resultPanel = byId("remediation-result");
   const emptyMessage = byId("remediation-empty");
   const severity = safeValue(finding.severity, "INFO").toUpperCase();
+  const patch = result.patchProposal ?? {};
+  const patchAvailable = patch.available === true;
+  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  const duration = Number(result.durationMs);
+  const durationText = Number.isFinite(duration) ? `${(duration / 1000).toFixed(1)} s` : "—";
+  const confidenceLabels = { HIGH: "alta", MEDIUM: "media", LOW: "baja" };
 
   byId("remediation-severity").className =
     `severity-badge ${severity.toLowerCase()}`;
   byId("remediation-severity").textContent = severity;
   byId("remediation-finding-id").textContent = safeValue(result.findingId);
   byId("remediation-meta").textContent =
-    `${safeValue(finding.tool)} \u00b7 ${safeValue(finding.component ?? finding.file)} \u00b7 Modelo: ${safeValue(result.model)}`;
+    `${safeValue(finding.tool)} \u00b7 ${safeValue(finding.component ?? finding.file)} \u00b7 ` +
+    `${safeValue(result.model)} \u00b7 ${durationText}`;
   byId("remediation-explanation").textContent = safeValue(result.explanation);
   byId("remediation-recommendation").textContent = safeValue(result.recommendation);
   byId("remediation-validation").textContent = safeValue(result.validation);
   byId("remediation-learning").textContent = safeValue(result.learningNote);
+
+  byId("remediation-confidence").textContent =
+    patchAvailable
+      ? `Confianza ${confidenceLabels[safeValue(patch.confidence, "LOW")] ?? "baja"}`
+      : "Sin cambio propuesto";
+  byId("remediation-patch-file").textContent = patchAvailable
+    ? `Archivo: ${safeValue(patch.file)}`
+    : "No hay ningún archivo que modificar automáticamente.";
+  byId("remediation-patch-reason").textContent = safeValue(
+    patch.reason,
+    "No hay contexto suficiente para preparar un cambio seguro.",
+  );
+  byId("remediation-patch-reason").classList.toggle("hidden", patchAvailable);
+  byId("remediation-patch-code").classList.toggle("hidden", !patchAvailable);
+  byId("remediation-patch-code").querySelector("code").textContent =
+    patchAvailable ? safeValue(patch.content) : "";
+
+  const warningList = byId("remediation-warning-list");
+  warningList.replaceChildren();
+  for (const warning of warnings) {
+    const item = document.createElement("li");
+    item.textContent = safeValue(warning);
+    warningList.appendChild(item);
+  }
+  byId("remediation-warnings").classList.toggle("hidden", warnings.length === 0);
 
   emptyMessage.classList.add("hidden");
   resultPanel.classList.remove("hidden");
@@ -217,8 +264,8 @@ async function requestRemediation(finding, button) {
   const status = byId("remediation-status");
 
   button.disabled = true;
-  button.textContent = "Consultando...";
-  status.textContent = `Analizando ${safeValue(finding.id)}`;
+  button.textContent = "Preparando ayuda...";
+  status.textContent = "";
 
   try {
     const response = await fetch("/api/remediation", {
@@ -238,13 +285,13 @@ async function requestRemediation(finding, button) {
     }
 
     renderRemediation(result, finding);
-    status.textContent = "Remediación generada";
+    status.textContent = "";
     byId("remediation-content").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (requestError) {
     status.textContent = requestError.message;
   } finally {
     button.disabled = false;
-    button.textContent = "Explicar con IA";
+    button.textContent = "Cómo corregirlo";
   }
 }
 
@@ -296,15 +343,13 @@ async function loadDashboard() {
     showRemediationEmpty(hasSavedRemediation
       ? "Existe una remediación guardada. Selecciona un hallazgo para consultarla de nuevo."
       : "Selecciona un hallazgo y pulsa «Explicar con IA» para ver una orientación.");
-    byId("remediation-status").textContent = hasSavedRemediation
-      ? "Última remediación guardada"
-      : "";
+    byId("remediation-status").textContent = "";
   } catch (loadError) {
     allFindings = [];
     renderStatus("SIN DATOS");
     renderFindings();
     error.textContent =
-      `${loadError.message} Ejecuta download_security_report.cmd y vuelve a intentarlo.`;
+      `${loadError.message} Pulsa "Actualizar datos" y vuelve a intentarlo.`;
     error.classList.remove("hidden");
   }
 }
@@ -315,7 +360,7 @@ async function updateReport() {
 
   button.disabled = true;
   button.textContent = "Actualizando...";
-  message.textContent = "Consultando GitHub Actions";
+  message.textContent = "";
 
   try {
     const response = await fetch("/api/update", {
@@ -331,7 +376,7 @@ async function updateReport() {
     }
 
     await loadDashboard();
-    message.textContent = "Informe actualizado";
+    message.textContent = "";
   } catch (updateError) {
     message.textContent = updateError.message;
   } finally {
@@ -341,8 +386,16 @@ async function updateReport() {
 }
 
 byId("refresh-button").addEventListener("click", updateReport);
-byId("search-input").addEventListener("input", renderFindings);
-byId("tool-filter").addEventListener("change", renderFindings);
-byId("severity-filter").addEventListener("change", renderFindings);
+byId("search-input").addEventListener("input", () => renderFindings(true));
+byId("tool-filter").addEventListener("change", () => renderFindings(true));
+byId("severity-filter").addEventListener("change", () => renderFindings(true));
+byId("previous-page").addEventListener("click", () => {
+  currentFindingsPage -= 1;
+  renderFindings();
+});
+byId("next-page").addEventListener("click", () => {
+  currentFindingsPage += 1;
+  renderFindings();
+});
 
 loadDashboard();

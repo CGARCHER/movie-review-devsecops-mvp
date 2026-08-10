@@ -41,12 +41,17 @@ cp .env.example .env
 
 y cambiar `POSTGRES_PASSWORD` antes de iniciar los servicios.
 
-La aplicación queda disponible en `http://localhost:8080` y PostgreSQL en
-`localhost:5432`.
+La aplicación queda disponible en `http://localhost:8080`, el dashboard en
+`http://localhost:8081` y PostgreSQL en `localhost:5432`. Durante el arranque se
+descarga el último informe de seguridad disponible.
 
-El fichero `compose.yml` se reserva para Dokploy. No publica PostgreSQL,
-requiere una contraseña definida externamente y aplica límites y restricciones
-al contenedor de la aplicación.
+El proyecto utiliza un Compose independiente para cada entorno:
+
+- `compose.local.yml`: aplicación, PostgreSQL y herramientas de seguridad en el
+  equipo local.
+- `compose.dev.yml`: aplicación, PostgreSQL y dashboard de seguridad en el
+  entorno `develop` de Dokploy.
+- `compose.main.yml`: aplicación y PostgreSQL en producción, sin dashboard.
 
 ## API
 
@@ -95,27 +100,30 @@ Los casos deliberadamente vulnerables se encuentran en `security-fixtures` y
 no se compilan ni se incluyen en Docker. Sus resultados se mantienen separados
 de los utilizados por la politica de promocion.
 
-## Configuracion para Dokploy
+## Configuración para Dokploy
 
-Variables de la aplicacion:
+El entorno de desarrollo utiliza la rama `develop` y el fichero
+`compose.dev.yml`. Requiere estas variables:
 
 ```text
-DATABASE_URL=jdbc:postgresql://postgres:5432/movies
-DATABASE_USER=movies
-DATABASE_PASSWORD=<secreto>
-DDL_AUTO=update
-PORT=8080
+POSTGRES_PASSWORD=<secreto de la base de datos de desarrollo>
+GH_TOKEN=<token de GitHub con acceso de lectura a Actions>
+AI_API_TOKEN=<Bearer Token de la API de IA>
+AI_API_URL=https://ai-api.cgarcher.dev/api/v1/remediations
 ```
+
+El entorno de producción utiliza la rama `main` y el fichero
+`compose.main.yml`. Solo requiere `POSTGRES_PASSWORD` y, opcionalmente,
+`DDL_AUTO`.
 
 El webhook de despliegue se guarda en GitHub como secreto de entorno
 `DOKPLOY_DEPLOY_WEBHOOK`.
 
 ## Descargar los informes de seguridad
 
-Los informes generados por GitHub Actions se pueden descargar sin instalar
-GitHub CLI en Windows. El proyecto incluye un contenedor auxiliar con `gh` que
-busca la última ejecución terminada de `security.yml` y descarga el artefacto
-`movie-security-report-*`.
+Los informes generados por GitHub Actions se descargan desde el propio
+contenedor `security-dashboard`. Este incluye `gh`, busca la última ejecución
+terminada de `security.yml` y descarga el artefacto `movie-security-report-*`.
 
 Antes de utilizarlo hay que crear dos ficheros locales:
 
@@ -127,17 +135,8 @@ Antes de utilizarlo hay que crear dos ficheros locales:
 
 Ambos ficheros están excluidos de Git y del contexto de construcción de Docker.
 
-En Windows:
-
-```text
-download_security_report.cmd
-```
-
-Desde cualquier sistema con Docker Compose:
-
-```bash
-docker compose -f compose.reports.yml run --rm --build report-downloader
-```
+La descarga inicial se realiza al levantar el entorno local. Después puede
+repetirse desde el botón `Actualizar datos` del dashboard.
 
 Los resultados se guardan en `reports/runs/<SHA>` y el fichero
 `reports/LATEST` indica la última ejecución descargada. La creación del token
@@ -145,11 +144,9 @@ se explica en `docs/github-token-para-informes.md`.
 
 ### Dashboard local
 
-El fichero `security_dashboard.cmd` realiza el proceso completo:
-
-1. Descarga el último informe disponible.
-2. Inicia el dashboard en un contenedor independiente.
-3. Abre `http://localhost:8081` en el navegador.
+El dashboard se inicia junto al resto del entorno mediante `compose.local.yml`.
+No requiere ejecutar ningún script adicional y queda disponible en
+`http://localhost:8081`.
 
 El dashboard muestra el estado de la política, el recuento por severidad, los
 datos del commit y los hallazgos filtrables. El botón `Explicar con IA` envía
@@ -161,3 +158,16 @@ El Bearer Token nunca se entrega al navegador. El dashboard se publica en el
 puerto `8081` y está pensado para el entorno local de desarrollo. Las
 recomendaciones generadas deben revisarse manualmente antes de modificar el
 proyecto.
+
+### Dashboard de la rama develop en Dokploy
+
+El fichero `compose.dev.yml` permite desplegar el dashboard en el entorno
+de desarrollo sin publicarlo junto a la aplicación de producción. Este despliegue
+consulta solo la última ejecución terminada de `security.yml` en la rama
+`develop`.
+
+Las variables necesarias son las indicadas en la configuración de Dokploy. Los
+tokens se montan como secretos dentro del contenedor. El dominio del
+dashboard debe asociarse al servicio `security-dashboard`, en su puerto interno
+`8080`. Como el panel permite descargar informes y solicitar remediaciones, su
+acceso debe limitarse mediante Cloudflare Access.

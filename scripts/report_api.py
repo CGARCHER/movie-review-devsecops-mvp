@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 import re
 import subprocess
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +18,9 @@ from typing import Any
 
 
 REPORT_ROOT = Path(os.getenv("REPORT_ROOT", "/workspace/reports"))
+DASHBOARD_ROOT = Path(
+    os.getenv("DASHBOARD_ROOT", "/usr/local/share/security-dashboard")
+)
 AI_API_URL = os.getenv(
     "AI_API_URL",
     "https://ai-api.cgarcher.dev/api/v1/remediations",
@@ -32,6 +37,17 @@ LATEST_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 class RequestError(Exception):
     """Error controlado que puede mostrarse al usuario del dashboard."""
+
+
+def download_report() -> subprocess.CompletedProcess[str]:
+    """Descarga el último informe mediante el cliente de GitHub incluido."""
+    return subprocess.run(
+        ["/usr/local/bin/security-report"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -115,7 +131,7 @@ def call_ai_api(payload: dict[str, Any]) -> dict[str, Any]:
         headers={
             "Authorization": f"Bearer {read_ai_token()}",
             "Content-Type": "application/json",
-            "User-Agent": "movie-review-report-updater/1.0",
+            "User-Agent": "movie-review-security-dashboard/1.0",
         },
         method="POST",
     )
@@ -187,10 +203,44 @@ def save_remediation(result: dict[str, Any], run_directory: Path) -> None:
 
 
 class ReportHandler(BaseHTTPRequestHandler):
+    def end_headers(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; connect-src 'self'; style-src 'self'; "
+            "script-src 'self'; img-src 'self'; object-src 'none'; "
+            "base-uri 'none'; frame-ancestors 'none'",
+        )
+        super().end_headers()
+
     def send_json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_file(self, root: Path, relative_path: str) -> None:
+        root = root.resolve()
+        candidate = (root / relative_path).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            self.send_json(404, {"error": "Fichero no encontrado."})
+            return
+
+        if not candidate.is_file():
+            self.send_json(404, {"error": "Fichero no encontrado."})
+            return
+
+        body = candidate.read_bytes()
+        content_type = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -212,8 +262,21 @@ class ReportHandler(BaseHTTPRequestHandler):
         return document
 
     def do_GET(self) -> None:
-        if self.path == "/health":
+        path = urllib.parse.unquote(urllib.parse.urlparse(self.path).path)
+        if path == "/health":
             self.send_json(200, {"status": "ok"})
+            return
+        if path.startswith("/reports/"):
+            self.send_file(REPORT_ROOT, path.removeprefix("/reports/"))
+            return
+        static_files = {
+            "/": "index.html",
+            "/index.html": "index.html",
+            "/app.js": "app.js",
+            "/styles.css": "styles.css",
+        }
+        if path in static_files:
+            self.send_file(DASHBOARD_ROOT, static_files[path])
             return
         self.send_json(404, {"error": "Ruta no encontrada."})
 
@@ -222,10 +285,10 @@ class ReportHandler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": "Petición no autorizada."})
             return
 
-        if self.path == "/update":
+        if self.path == "/api/update":
             self.update_report()
             return
-        if self.path == "/remediation":
+        if self.path == "/api/remediation":
             self.create_remediation()
             return
         self.send_json(404, {"error": "Ruta no encontrada."})
@@ -236,13 +299,7 @@ class ReportHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            result = subprocess.run(
-                ["/usr/local/bin/security-report"],
-                capture_output=True,
-                text=True,
-                timeout=180,
-                check=False,
-            )
+            result = download_report()
         except subprocess.TimeoutExpired:
             self.send_json(504, {"error": "La descarga ha superado el tiempo máximo."})
             return
@@ -289,6 +346,17 @@ class ReportHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    REPORT_ROOT.mkdir(parents=True, exist_ok=True)
+    try:
+        initial_download = download_report()
+        initial_output = (initial_download.stdout + initial_download.stderr).strip()
+        if initial_download.returncode == 0:
+            print("Informe inicial descargado correctamente.", flush=True)
+        else:
+            print(f"No se ha podido descargar el informe inicial: {initial_output}", flush=True)
+    except subprocess.TimeoutExpired:
+        print("La descarga inicial ha superado el tiempo máximo.", flush=True)
+
     server = ThreadingHTTPServer(("0.0.0.0", 8080), ReportHandler)
-    print("API local del dashboard disponible en el puerto 8080.", flush=True)
+    print("Security Dashboard disponible en el puerto 8080.", flush=True)
     server.serve_forever()

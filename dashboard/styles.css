@@ -81,12 +81,6 @@ main {
   padding: 28px 0 44px;
 }
 
-.notice {
-  padding: 12px 16px;
-  border-left: 4px solid var(--uned-green);
-  background: var(--uned-green-light);
-}
-
 .summary-grid {
   display: grid;
   grid-template-columns: 1.7fr repeat(5, 1fr);
@@ -97,9 +91,8 @@ main {
 .card,
 .panel {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 4px;
   background: var(--surface);
-  box-shadow: 0 4px 14px rgb(0 83 63 / 5%);
 }
 
 .card {
@@ -323,7 +316,35 @@ td {
 
 th {
   color: var(--muted);
+  background: #f3f6f5;
   font-size: 0.75rem;
+}
+
+tbody tr:hover {
+  background: #f8faf9;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 0.85rem;
+}
+
+.pagination button {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  background: white;
+  cursor: pointer;
+}
+
+.pagination button:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .severity-badge {
@@ -375,7 +396,7 @@ th {
 
 .remediation-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 14px;
   margin-top: 16px;
 }
@@ -389,6 +410,9 @@ th {
 }
 
 .remediation-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0 0 9px;
   color: var(--uned-green);
   font-size: 1rem;
@@ -399,6 +423,69 @@ th {
   overflow-wrap: anywhere;
   color: var(--text);
   font-size: 0.92rem;
+}
+
+.remediation-patch-card {
+  grid-column: 1 / -1;
+}
+
+.patch-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.confidence-badge {
+  padding: 4px 8px;
+  border-radius: 5px;
+  color: white;
+  background: var(--uned-green);
+  font-size: 0.75rem;
+  font-weight: bold;
+}
+
+.patch-file {
+  margin-top: 12px !important;
+  font-weight: bold;
+}
+
+.patch-code {
+  margin: 12px 0 0;
+  padding: 14px;
+  overflow-x: auto;
+  border-radius: 7px;
+  color: #f8fafc;
+  background: #173f35;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.remediation-warnings {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-left: 4px solid var(--medium);
+  border-radius: 5px;
+  background: #fff8e6;
+}
+
+.remediation-warnings ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.remediation-learning-box {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 7px;
+  background: #f3f6f5;
+}
+
+.remediation-learning-box p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .remediation-note {

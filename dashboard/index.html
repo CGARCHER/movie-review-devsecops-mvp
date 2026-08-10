@@ -24,11 +24,6 @@
   </header>
 
   <main class="container">
-    <p class="notice">
-      El estado representa el resultado de la política definida para el proyecto.
-      No constituye una garantía absoluta de seguridad.
-    </p>
-
     <section class="summary-grid" aria-label="Resumen de seguridad">
       <article id="status-card" class="card status-card">
         <span class="card-label">Estado de seguridad</span>
@@ -133,19 +128,23 @@
           </tbody>
         </table>
       </div>
+      <nav class="pagination" aria-label="Paginación de hallazgos">
+        <button id="previous-page" type="button">Anterior</button>
+        <span id="page-information">Página 1 de 1</span>
+        <button id="next-page" type="button">Siguiente</button>
+      </nav>
     </section>
 
     <section class="panel remediation-panel">
       <div class="section-heading">
         <div>
           <h2>Remediación asistida por IA</h2>
-          <p>Selecciona un hallazgo para solicitar una explicación educativa.</p>
         </div>
         <span id="remediation-status" class="remediation-status" aria-live="polite"></span>
       </div>
       <div id="remediation-content" class="remediation-content" aria-live="polite">
         <p id="remediation-empty" class="remediation-empty">
-          Selecciona un hallazgo y pulsa &laquo;Explicar con IA&raquo; para ver una orientaci&oacute;n.
+          Selecciona un hallazgo en la tabla para consultar c&oacute;mo corregirlo.
         </p>
         <article id="remediation-result" class="remediation-result hidden">
           <div class="remediation-finding">
@@ -157,25 +156,34 @@
           </div>
           <div class="remediation-grid">
             <section class="remediation-card">
-              <h3>1. Qu&eacute; ocurre</h3>
+              <h3>1. Entiende el problema</h3>
               <p id="remediation-explanation">-</p>
             </section>
-            <section class="remediation-card">
-              <h3>2. Qu&eacute; hacer</h3>
+            <section class="remediation-card remediation-patch-card">
+              <div class="patch-heading">
+                <h3>2. Revisa y aplica el cambio</h3>
+                <span id="remediation-confidence" class="confidence-badge">-</span>
+              </div>
               <p id="remediation-recommendation">-</p>
+              <p id="remediation-patch-file" class="patch-file">-</p>
+              <p id="remediation-patch-reason" class="hidden">-</p>
+              <pre id="remediation-patch-code" class="patch-code hidden"><code></code></pre>
+              <div id="remediation-warnings" class="remediation-warnings hidden">
+                <strong>Antes de cambiarlo</strong>
+                <ul id="remediation-warning-list"></ul>
+              </div>
             </section>
             <section class="remediation-card">
-              <h3>3. C&oacute;mo validarlo</h3>
+              <h3>3. Comprueba la soluci&oacute;n</h3>
               <p id="remediation-validation">-</p>
             </section>
-            <section class="remediation-card">
-              <h3>4. Qu&eacute; aprender</h3>
-              <p id="remediation-learning">-</p>
-            </section>
           </div>
+          <section class="remediation-learning-box">
+            <strong>Idea clave</strong>
+            <p id="remediation-learning">-</p>
+          </section>
           <p class="remediation-note">
-            La IA propone una orientaci&oacute;n educativa. Revisa la recomendaci&oacute;n antes de aplicarla;
-            no se modifica el c&oacute;digo ni se ejecutan comandos autom&aacute;ticamente.
+            La propuesta no se aplica autom&aacute;ticamente. Rev&iacute;sala antes de modificar el proyecto.
           </p>
         </article>
       </div>
