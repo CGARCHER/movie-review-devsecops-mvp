@@ -100,6 +100,10 @@ Los casos deliberadamente vulnerables se encuentran en `security-fixtures` y
 no se compilan ni se incluyen en Docker. Sus resultados se mantienen separados
 de los utilizados por la politica de promocion.
 
+El fixture SAST comprueba de forma determinista que Semgrep detecta una
+inyeccion de comandos, un secreto hardcodeado y el uso del algoritmo MD5. El
+workflow falla si falta cualquiera de esos tres hallazgos de demostracion.
+
 ## Configuración para Dokploy
 
 El entorno de desarrollo utiliza la rama `develop` y el fichero

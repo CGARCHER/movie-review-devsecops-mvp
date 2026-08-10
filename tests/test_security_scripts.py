@@ -101,6 +101,19 @@ class NormalizeFindingsTest(unittest.TestCase):
             normalize_findings.dependency_version(dependency),
         )
 
+    def test_trivy_keeps_the_package_type(self):
+        findings = normalize_findings.trivy_findings({
+            "Results": [{
+                "Type": "jar",
+                "Vulnerabilities": [{
+                    "VulnerabilityID": "CVE-TEST",
+                    "PkgName": "org.example:library",
+                }],
+            }],
+        }, "commit")
+
+        self.assertEqual("jar", findings[0]["packageType"])
+
 
 class EvaluatePolicyTest(unittest.TestCase):
     policy = {
@@ -210,20 +223,60 @@ class ReportApiTest(unittest.TestCase):
                 report_api.selected_finding(0, "CVE-OTHER", report_root)
 
     def test_remediation_payload_uses_only_normalized_fields(self):
-        payload = report_api.remediation_payload({
-            "id": "CVE-2021-44228",
-            "severity": "CRITICAL",
-            "tool": "dependency-check",
-            "category": "SCA",
-            "component": "log4j-core",
-            "description": "Descripción recibida del analizador.",
-            "fixedVersion": "2.17.1",
-            "references": ["https://example.invalid"],
-        })
+        with tempfile.TemporaryDirectory() as temporary:
+            source_root = Path(temporary)
+            (source_root / "pom.xml").write_text(
+                "<version>2.14.1</version>",
+                encoding="utf-8",
+            )
+            payload = report_api.remediation_payload({
+                "id": "CVE-2021-44228",
+                "severity": "CRITICAL",
+                "tool": "dependency-check",
+                "category": "SCA",
+                "component": "log4j-core",
+                "version": "2.14.1",
+                "description": "Descripción recibida del analizador.",
+                "fixedVersion": "2.17.1",
+                "references": ["https://example.invalid"],
+            }, source_root)
 
         self.assertEqual("CVE-2021-44228", payload["id"])
         self.assertEqual("2.17.1", payload["fixedVersion"])
+        self.assertEqual("pom.xml", payload["affectedFile"])
+        self.assertIn("2.14.1", payload["sourceContext"])
         self.assertNotIn("references", payload)
+
+    def test_sast_context_rejects_paths_outside_src(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source_root = Path(temporary)
+            payload = report_api.remediation_payload({
+                "id": "java-test",
+                "severity": "HIGH",
+                "tool": "semgrep",
+                "category": "SAST",
+                "file": "../.env",
+                "description": "Hallazgo de prueba.",
+            }, source_root)
+
+        self.assertIsNone(payload["affectedFile"])
+        self.assertIsNone(payload["sourceContext"])
+
+    def test_container_java_dependency_uses_pom(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source_root = Path(temporary)
+            (source_root / "pom.xml").write_text("<project/>", encoding="utf-8")
+            payload = report_api.remediation_payload({
+                "id": "CVE-TEST",
+                "severity": "LOW",
+                "tool": "trivy",
+                "category": "CONTAINER",
+                "packageType": "jar",
+                "component": "org.springframework:spring-webmvc",
+                "description": "Hallazgo de prueba.",
+            }, source_root)
+
+        self.assertEqual("pom.xml", payload["affectedFile"])
 
     def test_dashboard_server_serves_the_interface(self):
         with tempfile.TemporaryDirectory() as temporary:

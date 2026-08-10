@@ -18,6 +18,10 @@ from typing import Any
 
 
 REPORT_ROOT = Path(os.getenv("REPORT_ROOT", "/workspace/reports"))
+SOURCE_ROOT = Path(os.getenv("SOURCE_ROOT", "/workspace/source"))
+AI_REMEDIATION_ENABLED = os.getenv(
+    "AI_REMEDIATION_ENABLED", "false"
+).lower() == "true"
 DASHBOARD_ROOT = Path(
     os.getenv("DASHBOARD_ROOT", "/usr/local/share/security-dashboard")
 )
@@ -33,6 +37,7 @@ MAX_REQUEST_SIZE = 1024
 UPDATE_LOCK = threading.Lock()
 REMEDIATION_LOCK = threading.Lock()
 LATEST_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+MAX_SOURCE_CONTEXT = 8000
 
 
 class RequestError(Exception):
@@ -95,11 +100,65 @@ def selected_finding(
     return finding, run_directory
 
 
-def remediation_payload(finding: dict[str, Any]) -> dict[str, Any]:
+def source_file_for_finding(finding: dict[str, Any], source_root: Path) -> Path | None:
+    """Localiza únicamente ficheros de código permitidos para la remediación."""
+    category = str(finding.get("category", "")).upper()
+    if category == "SCA":
+        relative_path = Path("pom.xml")
+    elif category == "CONTAINER":
+        is_maven_dependency = (
+            finding.get("packageType") == "jar"
+            or ":" in str(finding.get("component") or "")
+        )
+        relative_path = Path("pom.xml" if is_maven_dependency else "Dockerfile")
+    elif category == "SAST":
+        file_value = str(finding.get("file") or "").replace("\\", "/")
+        relative_path = Path(file_value)
+        if relative_path.suffix != ".java" or not file_value.startswith("src/"):
+            return None
+    else:
+        return None
+
+    root = source_root.resolve()
+    candidate = (root / relative_path).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def source_context(finding: dict[str, Any], source_root: Path) -> tuple[str | None, str | None]:
+    """Lee el fichero afectado sin permitir acceso al resto del equipo."""
+    source_file = source_file_for_finding(finding, source_root)
+    if source_file is None:
+        return None, None
+
+    try:
+        content = source_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None, None
+
+    line = finding.get("line")
+    if isinstance(line, int) and line > 0:
+        lines = content.splitlines()
+        first = max(0, line - 5)
+        last = min(len(lines), line + 4)
+        content = "\n".join(lines[first:last])
+
+    relative_path = source_file.relative_to(source_root.resolve()).as_posix()
+    return relative_path, content[:MAX_SOURCE_CONTEXT]
+
+
+def remediation_payload(
+    finding: dict[str, Any],
+    source_root: Path = SOURCE_ROOT,
+) -> dict[str, Any]:
     description = finding.get("description")
     if not isinstance(description, str) or not description.strip():
         description = "El analizador no proporcionó una descripción del hallazgo."
 
+    affected_file, context = source_context(finding, source_root)
     return {
         "id": str(finding.get("id", "")),
         "severity": str(finding.get("severity", "UNKNOWN")),
@@ -107,7 +166,11 @@ def remediation_payload(finding: dict[str, Any]) -> dict[str, Any]:
         "category": str(finding.get("category", "OTHER")),
         "component": finding.get("component") or finding.get("file"),
         "description": description,
+        "currentVersion": finding.get("version"),
         "fixedVersion": finding.get("fixedVersion"),
+        "affectedFile": affected_file,
+        "line": finding.get("line"),
+        "sourceContext": context,
     }
 
 
@@ -166,6 +229,14 @@ def call_ai_api(payload: dict[str, Any]) -> dict[str, Any]:
         raise RequestError("La respuesta de la API de IA está incompleta.")
     if result["findingId"] != payload["id"]:
         raise RequestError("La respuesta de la API de IA no corresponde al hallazgo.")
+
+    patch = result.get("patchProposal")
+    if isinstance(patch, dict) and patch.get("available") is True:
+        if not payload.get("affectedFile") or patch.get("file") != payload["affectedFile"]:
+            raise RequestError("El parche no corresponde al fichero analizado.")
+        content = patch.get("content")
+        if not isinstance(content, str) or "--- " not in content or "+++ " not in content:
+            raise RequestError("La propuesta no contiene una diferencia válida.")
     return result
 
 
@@ -270,6 +341,9 @@ class ReportHandler(BaseHTTPRequestHandler):
         if path == "/health":
             self.send_json(200, {"status": "ok"})
             return
+        if path == "/api/config":
+            self.send_json(200, {"remediationEnabled": AI_REMEDIATION_ENABLED})
+            return
         if path.startswith("/reports/"):
             self.send_file(REPORT_ROOT, path.removeprefix("/reports/"))
             return
@@ -323,6 +397,10 @@ class ReportHandler(BaseHTTPRequestHandler):
         )
 
     def create_remediation(self) -> None:
+        if not AI_REMEDIATION_ENABLED:
+            self.send_json(403, {"error": "La remediación solo está disponible en local."})
+            return
+
         if not REMEDIATION_LOCK.acquire(blocking=False):
             self.send_json(409, {"error": "Ya hay una remediación en curso."})
             return

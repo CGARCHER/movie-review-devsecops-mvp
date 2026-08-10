@@ -35,6 +35,23 @@ jobs:
           mkdir -p reports/demo/sast
           semgrep scan --config security/semgrep.yml --json \
             --output reports/demo/sast/semgrep-fixture.json security-fixtures/sast
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("reports/demo/sast/semgrep-fixture.json").read_text(encoding="utf-8"))
+          findings = report.get("results", [])
+          expected = {
+              "tfm-java-command-injection",
+              "tfm-java-hardcoded-secret",
+              "tfm-java-weak-md5",
+          }
+          detected = {item.get("check_id", "").split(".")[-1] for item in findings}
+          missing = sorted(expected - detected)
+          if missing:
+              raise SystemExit(f"Semgrep no detecto los fixtures esperados: {', '.join(missing)}")
+          print(f"Fixtures SAST detectados: {len(findings)}")
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -74,7 +91,7 @@ jobs:
           NVD_ARGS=(-DnvdApiDelay=6000 -DnvdMaxRetryCount=20 -DnvdValidForHours=24)
           if [ -n "$NVD_API_KEY" ]; then NVD_ARGS+=(-DnvdApiKey="$NVD_API_KEY"); fi
           mvn --batch-mode --no-transfer-progress package -DskipTests \
-            org.owasp:dependency-check-maven:check "${NVD_ARGS[@]}"
+            org.owasp:dependency-check-maven:12.2.2:check "${NVD_ARGS[@]}"
           mkdir -p reports/sca
           cp target/dependency-check/dependency-check-report.* reports/sca/ 2>/dev/null || true
           test -s reports/sca/dependency-check-report.json

@@ -16,3 +16,12 @@ rules:
       category: security
       cwe: CWE-798
     pattern-regex: '(?i)(password|secret|api[_-]?key)\\s*=\\s*"[^"\\n]{8,}"'
+
+  - id: tfm-java-weak-md5
+    languages: [java]
+    severity: WARNING
+    message: Uso de MD5 para una operacion sensible.
+    metadata:
+      category: security
+      cwe: CWE-327
+    pattern: MessageDigest.getInstance("MD5")

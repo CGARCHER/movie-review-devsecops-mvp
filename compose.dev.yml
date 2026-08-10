@@ -60,8 +60,7 @@ services:
       GITHUB_BRANCH: develop
       GH_TOKEN: ${GH_TOKEN:?Define GH_TOKEN en Dokploy}
       REPORT_ROOT: /workspace/reports
-      AI_API_URL: ${AI_API_URL:-https://ai-api.cgarcher.dev/api/v1/remediations}
-      AI_API_TOKEN: ${AI_API_TOKEN:?Define AI_API_TOKEN en Dokploy}
+      AI_REMEDIATION_ENABLED: "false"
     volumes:
       - security-reports:/workspace/reports
     read_only: true

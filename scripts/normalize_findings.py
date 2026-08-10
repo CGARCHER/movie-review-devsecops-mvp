@@ -98,6 +98,7 @@ def trivy_findings(data: dict[str, Any], commit: str) -> list[dict[str, Any]]:
                 "id": vulnerability.get("VulnerabilityID", "trivy-unknown"),
                 "tool": "trivy",
                 "category": "CONTAINER",
+                "packageType": result.get("Type"),
                 "severity": normalized_severity(vulnerability.get("Severity")),
                 "component": vulnerability.get("PkgName"),
                 "version": vulnerability.get("InstalledVersion"),

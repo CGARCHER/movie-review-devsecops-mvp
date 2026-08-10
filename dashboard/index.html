@@ -70,6 +70,12 @@
           <div><dt>Problemas únicos</dt><dd id="analysis-unique">—</dd></div>
           <div><dt>Componentes afectados</dt><dd id="analysis-components">—</dd></div>
         </dl>
+        <div class="analyzer-overview">
+          <h3>Herramientas del analisis</h3>
+          <div id="analyzer-status-list" class="analyzer-status-list">
+            <p class="empty-message">Estado no disponible.</p>
+          </div>
+        </div>
         <a id="workflow-link" class="workflow-link hidden" href="#" target="_blank" rel="noreferrer">
           Abrir ejecución en GitHub
         </a>
@@ -135,7 +141,7 @@
       </nav>
     </section>
 
-    <section class="panel remediation-panel">
+    <section id="remediation-panel" class="panel remediation-panel">
       <div class="section-heading">
         <div>
           <h2>Remediación asistida por IA</h2>
@@ -167,7 +173,66 @@
               <p id="remediation-recommendation">-</p>
               <p id="remediation-patch-file" class="patch-file">-</p>
               <p id="remediation-patch-reason" class="hidden">-</p>
-              <pre id="remediation-patch-code" class="patch-code hidden"><code></code></pre>
+              <div id="remediation-editor" class="editor-window hidden" aria-label="Fichero abierto en modo simulacion">
+                <div class="editor-window-bar">
+                  <div class="window-controls" aria-hidden="true">
+                    <span class="window-control close"></span>
+                    <span class="window-control minimize"></span>
+                    <span class="window-control maximize"></span>
+                  </div>
+                  <div class="editor-tab">
+                    <span class="editor-tab-icon">[]</span>
+                    <strong id="remediation-editor-tab">Dockerfile</strong>
+                    <span class="editor-tab-close">x</span>
+                  </div>
+                  <span class="editor-mode">solo lectura</span>
+                </div>
+                <div class="editor-toolbar">
+                  <span class="editor-breadcrumb">
+                    project <b>/</b> <strong id="remediation-editor-file">Dockerfile</strong>
+                    <em id="remediation-editor-location">Linea pendiente</em>
+                  </span>
+                  <span class="editor-toolbar-status">
+                    <span class="editor-status-dot"></span>
+                    <span id="remediation-editor-status">cambio sugerido</span>
+                  </span>
+                </div>
+                <div id="remediation-editor-code" class="editor-code" role="region" aria-label="Contenido del Dockerfile"></div>
+                <div class="editor-change-summary" aria-label="Resumen del cambio propuesto">
+                  <div class="editor-change-card removed">
+                    <strong>
+                      <span><span aria-hidden="true">−</span> Se elimina</span>
+                      <small id="remediation-editor-removed-line">—</small>
+                    </strong>
+                    <code id="remediation-editor-removed">Ninguna linea</code>
+                  </div>
+                  <div class="editor-change-card added">
+                    <strong>
+                      <span><span aria-hidden="true">+</span> Se anade</span>
+                      <small id="remediation-editor-added-line">—</small>
+                    </strong>
+                    <code id="remediation-editor-added">Ninguna linea</code>
+                  </div>
+                </div>
+                <div class="editor-legend">
+                  <span><i class="legend-swatch removed"></i> contenido actual</span>
+                  <span><i class="legend-swatch added"></i> cambio propuesto</span>
+                </div>
+              </div>
+              <div id="remediation-change" class="remediation-change hidden">
+                <div id="remediation-before-box" class="change-before">
+                  <strong id="remediation-before-title">Localiza este contenido</strong>
+                  <pre><code id="remediation-before"></code></pre>
+                </div>
+                <div id="remediation-after-box" class="change-after">
+                  <strong id="remediation-after-title">Sustitúyelo por</strong>
+                  <pre><code id="remediation-after"></code></pre>
+                </div>
+              </div>
+              <details id="remediation-diff" class="remediation-diff hidden">
+                <summary>Ver diferencia técnica</summary>
+                <pre id="remediation-patch-code" class="patch-code"><code></code></pre>
+              </details>
               <div id="remediation-warnings" class="remediation-warnings hidden">
                 <strong>Antes de cambiarlo</strong>
                 <ul id="remediation-warning-list"></ul>
@@ -183,7 +248,7 @@
             <p id="remediation-learning">-</p>
           </section>
           <p class="remediation-note">
-            La propuesta no se aplica autom&aacute;ticamente. Rev&iacute;sala antes de modificar el proyecto.
+            La propuesta no modifica el proyecto. Comprueba el cambio y apl&iacute;calo manualmente.
           </p>
         </article>
       </div>
