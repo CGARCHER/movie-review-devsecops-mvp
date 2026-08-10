@@ -112,6 +112,10 @@ def remediation_payload(finding: dict[str, Any]) -> dict[str, Any]:
 
 
 def read_ai_token(token_file: Path = AI_API_TOKEN_FILE) -> str:
+    token = os.getenv("AI_API_TOKEN", "").strip()
+    if token:
+        return token
+
     try:
         token = token_file.read_text(encoding="utf-8").strip()
     except OSError as error:
