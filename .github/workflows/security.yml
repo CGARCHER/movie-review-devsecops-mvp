@@ -88,10 +88,20 @@ jobs:
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
-          NVD_ARGS=(-DnvdApiDelay=6000 -DnvdMaxRetryCount=20 -DnvdValidForHours=24)
+          NVD_ARGS=(-DnvdApiDelay=3500 -DnvdMaxRetryCount=20 -DnvdValidForHours=24)
           if [ -n "$NVD_API_KEY" ]; then NVD_ARGS+=(-DnvdApiKey="$NVD_API_KEY"); fi
-          mvn --batch-mode --no-transfer-progress package -DskipTests \
-            org.owasp:dependency-check-maven:12.2.2:check "${NVD_ARGS[@]}"
+          for attempt in 1 2 3; do
+            if mvn --batch-mode --no-transfer-progress "${NVD_ARGS[@]}" \
+              -DskipTests package org.owasp:dependency-check-maven:12.2.2:check; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Dependency-Check no pudo actualizar la NVD tras 3 intentos." >&2
+              exit 1
+            fi
+            echo "Reintentando Dependency-Check ($attempt/3) tras un fallo temporal de la NVD..."
+            sleep 30
+          done
           mkdir -p reports/sca
           cp target/dependency-check/dependency-check-report.* reports/sca/ 2>/dev/null || true
           test -s reports/sca/dependency-check-report.json
@@ -99,13 +109,14 @@ jobs:
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
-          NVD_ARGS=(-DnvdApiDelay=6000 -DnvdMaxRetryCount=20 -DnvdValidForHours=24)
+          NVD_ARGS=(-DnvdApiDelay=3500 -DnvdMaxRetryCount=20 -DnvdValidForHours=24)
           if [ -n "$NVD_API_KEY" ]; then NVD_ARGS+=(-DnvdApiKey="$NVD_API_KEY"); fi
           mkdir -p reports/demo/sca
-          mvn --batch-mode --no-transfer-progress -f security-fixtures/sca/pom.xml \
+          mvn --batch-mode --no-transfer-progress "${NVD_ARGS[@]}" \
+            -f security-fixtures/sca/pom.xml \
             org.owasp:dependency-check-maven:12.2.2:check \
             -Dformat=JSON -DoutputDirectory="${PWD}/reports/demo/sca" \
-            -DfailBuildOnCVSS=11 "${NVD_ARGS[@]}"
+            -DfailBuildOnCVSS=11
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
