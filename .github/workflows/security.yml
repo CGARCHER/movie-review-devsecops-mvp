@@ -74,34 +74,21 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
-      - name: Preparar clave de cache de la NVD
-        id: nvd-cache-date
-        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
       - name: Restaurar datos de Dependency-Check
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.m2/repository/org/owasp/dependency-check-data
-          key: dependency-check-nvd-${{ runner.os }}-${{ steps.nvd-cache-date.outputs.date }}
+          key: dependency-check-nvd-${{ runner.os }}-12.2.2-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            dependency-check-nvd-${{ runner.os }}-
+            dependency-check-nvd-${{ runner.os }}-12.2.2-
       - name: Analizar dependencias reales
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
-          NVD_ARGS=(-DnvdApiDelay=3500 -DnvdMaxRetryCount=20 -DnvdValidForHours=24)
+          NVD_ARGS=(-DnvdApiDelay=3500 -DnvdValidForHours=24)
           if [ -n "$NVD_API_KEY" ]; then NVD_ARGS+=(-DnvdApiKey="$NVD_API_KEY"); fi
-          for attempt in 1 2 3; do
-            if mvn --batch-mode --no-transfer-progress "${NVD_ARGS[@]}" \
-              -DskipTests package org.owasp:dependency-check-maven:12.2.2:check; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              echo "Dependency-Check no pudo actualizar la NVD tras 3 intentos." >&2
-              exit 1
-            fi
-            echo "Reintentando Dependency-Check ($attempt/3) tras un fallo temporal de la NVD..."
-            sleep 30
-          done
+          mvn --batch-mode --no-transfer-progress "${NVD_ARGS[@]}" \
+            -DskipTests package org.owasp:dependency-check-maven:12.2.2:check
           mkdir -p reports/sca
           cp target/dependency-check/dependency-check-report.* reports/sca/ 2>/dev/null || true
           test -s reports/sca/dependency-check-report.json
@@ -109,7 +96,7 @@ jobs:
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
-          NVD_ARGS=(-DnvdApiDelay=3500 -DnvdMaxRetryCount=20 -DnvdValidForHours=24)
+          NVD_ARGS=(-DnvdApiDelay=3500 -DnvdValidForHours=24)
           if [ -n "$NVD_API_KEY" ]; then NVD_ARGS+=(-DnvdApiKey="$NVD_API_KEY"); fi
           mkdir -p reports/demo/sca
           mvn --batch-mode --no-transfer-progress "${NVD_ARGS[@]}" \
@@ -126,6 +113,12 @@ jobs:
             reports/demo/sca/
           if-no-files-found: warn
           retention-days: 30
+      - name: Guardar datos de Dependency-Check
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        if: always()
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: dependency-check-nvd-${{ runner.os }}-12.2.2-${{ github.run_id }}-${{ github.run_attempt }}
 
   container:
     runs-on: ubuntu-latest
