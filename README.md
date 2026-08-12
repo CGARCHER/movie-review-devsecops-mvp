@@ -152,6 +152,11 @@ El dashboard se inicia junto al resto del entorno mediante `compose.local.yml`.
 No requiere ejecutar ningún script adicional y queda disponible en
 `http://localhost:8081`.
 
+La variable `GITHUB_BRANCH` del fichero `.env` determina la rama cuyos
+informes descarga el dashboard. En una rama de trabajo debe coincidir con su
+nombre completo, por ejemplo `feature/dashboard-desarrollo`; si no se define,
+el entorno local utiliza `develop`.
+
 El dashboard muestra el estado de la política, el recuento por severidad, los
 datos del commit y los hallazgos filtrables. El botón `Explicar con IA` envía
 al servicio local únicamente el identificador y la posición del hallazgo. El

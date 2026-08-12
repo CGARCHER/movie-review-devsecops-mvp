@@ -233,7 +233,27 @@ main {
   text-align: right;
 }
 
-.analyzer-status-item.error span {
+.analyzer-identity {
+  min-width: 0;
+}
+
+.analyzer-identity strong,
+.analyzer-identity small {
+  display: block;
+}
+
+.analyzer-identity small {
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.analyzer-status-item .analyzer-result {
+  color: var(--muted);
+  text-align: right;
+}
+
+.analyzer-status-item.error .analyzer-result {
   color: var(--blocked);
   font-weight: bold;
 }

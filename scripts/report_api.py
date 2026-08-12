@@ -386,9 +386,17 @@ class ReportHandler(BaseHTTPRequestHandler):
 
         output = (result.stdout + result.stderr).strip()
         if result.returncode != 0:
+            error_message = "No se ha podido actualizar el informe."
+            if "no se ha encontrado ninguna ejecucion terminada" in output.lower():
+                branch = os.getenv("GITHUB_BRANCH", "").strip()
+                error_message = (
+                    f"Todavia no existe un analisis terminado para la rama {branch}."
+                    if branch
+                    else "Todavia no existe ningun analisis terminado."
+                )
             self.send_json(
-                502,
-                {"error": "No se ha podido actualizar el informe.", "detail": output},
+                404 if "ninguna ejecucion terminada" in output.lower() else 502,
+                {"error": error_message, "detail": output},
             )
             return
         self.send_json(

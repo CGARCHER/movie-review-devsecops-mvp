@@ -120,6 +120,11 @@ function renderAnalyzerStatus(statusDocument) {
     sca: "dependency-check",
     container: "trivy",
   };
+  const technologyNames = {
+    sast: "SAST - An\u00e1lisis est\u00e1tico",
+    sca: "SCA - An\u00e1lisis de dependencias",
+    container: "An\u00e1lisis de contenedores",
+  };
   for (const [key, analyzer] of Object.entries(analyzers)) {
     const toolName = findingToolNames[key];
     const count = allFindings.filter((finding) => finding.tool === toolName).length;
@@ -128,13 +133,19 @@ function renderAnalyzerStatus(statusDocument) {
     const stateClass = status !== "SUCCESS" ? "error" : count > 0 ? "success" : "empty";
     item.className = `analyzer-status-item ${stateClass}`;
 
-    const name = document.createElement("strong");
-    name.textContent = safeValue(analyzer.name, toolName);
+    const identity = document.createElement("div");
+    identity.className = "analyzer-identity";
+    const technology = document.createElement("strong");
+    technology.textContent = safeValue(technologyNames[key], key.toUpperCase());
+    const name = document.createElement("small");
+    name.textContent = `Herramienta: ${safeValue(analyzer.name, toolName)}`;
+    identity.append(technology, name);
     const detail = document.createElement("span");
+    detail.className = "analyzer-result";
     detail.textContent = status === "SUCCESS"
       ? `${count} hallazgos`
       : safeValue(analyzer.message, `Informe ${status.toLowerCase()}`);
-    item.append(name, detail);
+    item.append(identity, detail);
     container.appendChild(item);
   }
 }
@@ -689,7 +700,16 @@ async function updateReport() {
     const result = await response.json();
 
     if (!response.ok) {
-      throw new Error(result.error ?? "No se ha podido actualizar el informe.");
+      const detail = safeValue(result.detail, "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .at(-1);
+      throw new Error(
+        detail && !safeValue(result.error, "").includes(detail)
+          ? `${safeValue(result.error)} ${detail}`
+          : safeValue(result.error, "No se ha podido actualizar el informe."),
+      );
     }
 
     await loadDashboard();
