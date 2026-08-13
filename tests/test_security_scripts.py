@@ -29,7 +29,7 @@ class ValidateReportsTest(unittest.TestCase):
             directory = Path(temporary)
             result = validate_reports.build_status({
                 "sast": self.create_report(directory, "sast.json", {"results": []}),
-                "sca": self.create_report(directory, "sca.json", {"dependencies": []}),
+                "sca": self.create_report(directory, "sca.json", {"Results": []}),
                 "container": self.create_report(directory, "trivy.json", {"Results": []}),
             })
 
@@ -41,7 +41,7 @@ class ValidateReportsTest(unittest.TestCase):
             directory = Path(temporary)
             result = validate_reports.build_status({
                 "sast": directory / "missing-sast.json",
-                "sca": self.create_report(directory, "sca.json", {"dependencies": []}),
+                "sca": self.create_report(directory, "sca.json", {"Results": []}),
                 "container": self.create_report(directory, "trivy.json", {"Results": []}),
             })
 
@@ -89,18 +89,6 @@ class NormalizeFindingsTest(unittest.TestCase):
         self.assertEqual(2, summary["bySeverity"]["HIGH"])
         self.assertEqual(1, summary["uniqueBySeverity"]["HIGH"])
 
-    def test_dependency_version_is_read_from_package_url(self):
-        dependency = {
-            "packages": [
-                {"id": "pkg:maven/org.example/example@1.2.3?type=jar"},
-            ],
-        }
-
-        self.assertEqual(
-            "1.2.3",
-            normalize_findings.dependency_version(dependency),
-        )
-
     def test_trivy_keeps_the_package_type(self):
         findings = normalize_findings.trivy_findings({
             "Results": [{
@@ -113,6 +101,20 @@ class NormalizeFindingsTest(unittest.TestCase):
         }, "commit")
 
         self.assertEqual("jar", findings[0]["packageType"])
+
+    def test_trivy_can_normalize_sca_findings(self):
+        findings = normalize_findings.trivy_findings({
+            "Results": [{
+                "Type": "jar",
+                "Vulnerabilities": [{
+                    "VulnerabilityID": "CVE-TEST",
+                    "PkgName": "org.example:library",
+                }],
+            }],
+        }, "commit", category="SCA", tool="trivy-sca")
+
+        self.assertEqual("SCA", findings[0]["category"])
+        self.assertEqual("trivy-sca", findings[0]["tool"])
 
 
 class EvaluatePolicyTest(unittest.TestCase):
@@ -190,7 +192,7 @@ class ReportApiTest(unittest.TestCase):
                     {
                         "id": "CVE-2021-44228",
                         "severity": "CRITICAL",
-                        "tool": "dependency-check",
+                        "tool": "trivy-sca",
                         "category": "SCA",
                         "component": "log4j-core",
                         "description": "Vulnerabilidad de prueba del cliente.",
@@ -232,7 +234,7 @@ class ReportApiTest(unittest.TestCase):
             payload = report_api.remediation_payload({
                 "id": "CVE-2021-44228",
                 "severity": "CRITICAL",
-                "tool": "dependency-check",
+                "tool": "trivy-sca",
                 "category": "SCA",
                 "component": "log4j-core",
                 "version": "2.14.1",

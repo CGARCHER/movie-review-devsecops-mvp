@@ -17,7 +17,7 @@ from typing import Any
 
 REPORTS = {
     "sast": ("Semgrep", "results"),
-    "sca": ("Dependency-Check", "dependencies"),
+    "sca": ("Trivy SCA", "Results"),
     "container": ("Trivy", "Results"),
 }
 
@@ -72,7 +72,7 @@ def main() -> None:
     parser.add_argument(
         "--sca",
         type=Path,
-        default=Path("reports/sca/dependency-check-report.json"),
+        default=Path("reports/sca/trivy-sca.json"),
     )
     parser.add_argument(
         "--container",

@@ -8,7 +8,7 @@ flowchart LR
     GH --> CI[CI]
     GH --> SEC[Seguridad asincrona]
     SEC --> SAST[Semgrep]
-    SEC --> SCA[Dependency-Check]
+    SEC --> SCA[Trivy SCA]
     SEC --> IMG[Trivy]
     SAST --> N[Normalizador]
     SCA --> N

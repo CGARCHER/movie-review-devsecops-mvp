@@ -78,7 +78,7 @@ Ejemplo de reseña:
 ## Pipeline
 
 - `ci.yml`: compila, prueba y construye la imagen.
-- `security.yml`: ejecuta Semgrep, Dependency-Check y Trivy en paralelo.
+- `security.yml`: ejecuta Semgrep y Trivy en paralelo; Trivy analiza tanto las dependencias (SCA) como la imagen del contenedor.
 - `deploy-dokploy.yml`: dispara manualmente un despliegue protegido por entorno.
 
 La política utiliza cuatro estados:

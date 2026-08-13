@@ -3,7 +3,8 @@
 ## Estados
 
 La decisión se calcula después de validar y normalizar los informes de
-Semgrep, Dependency-Check y Trivy.
+Semgrep y Trivy. Trivy se ejecuta en modo SCA para las dependencias y en modo
+imagen para el contenedor.
 
 | Estado | Significado | Producción |
 |---|---|---|

@@ -117,7 +117,7 @@ function renderAnalyzerStatus(statusDocument) {
 
   const findingToolNames = {
     sast: "semgrep",
-    sca: "dependency-check",
+    sca: "trivy-sca",
     container: "trivy",
   };
   const technologyNames = {
@@ -342,10 +342,9 @@ function manualVisualPatch(result, finding) {
     content: [
       "--- pom.xml",
       "+++ pom.xml",
-      "@@ -20,4 +20,5 @@",
+      "@@ -20,3 +20,4 @@",
       "     <properties>",
       "         <java.version>17</java.version>",
-      "         <dependency-check.version>12.2.2</dependency-check.version>",
       `+        <${propertyName}>${version}</${propertyName}>`,
       "     </properties>",
     ].join("\n"),
