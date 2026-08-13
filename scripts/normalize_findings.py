@@ -102,10 +102,9 @@ def deduplicate(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def issue_key(finding: dict[str, Any]) -> tuple[Any, ...]:
-    """Agrupa instancias que requieren esencialmente la misma remediación."""
+    """Agrupa una vulnerabilidad aunque la detecten varias superficies."""
     return (
         finding.get("id"),
-        finding.get("category"),
         finding.get("component"),
         finding.get("version"),
         finding.get("fixedVersion"),

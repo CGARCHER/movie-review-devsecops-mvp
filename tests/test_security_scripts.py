@@ -63,7 +63,7 @@ class NormalizeFindingsTest(unittest.TestCase):
         findings = [
             {
                 "id": "CVE-TEST-1",
-                "category": "CONTAINER",
+                "category": "SCA",
                 "component": "libexample",
                 "version": "1.0",
                 "fixedVersion": "1.1",
@@ -88,6 +88,23 @@ class NormalizeFindingsTest(unittest.TestCase):
         self.assertEqual(1, summary["affectedComponents"])
         self.assertEqual(2, summary["bySeverity"]["HIGH"])
         self.assertEqual(1, summary["uniqueBySeverity"]["HIGH"])
+
+    def test_same_issue_from_sca_and_container_is_unique(self):
+        base = {
+            "id": "CVE-TEST-2",
+            "component": "org.example:library",
+            "version": "1.0",
+            "fixedVersion": "1.1",
+            "severity": "CRITICAL",
+        }
+        summary = normalize_findings.summarize([
+            {**base, "category": "SCA", "file": "Java"},
+            {**base, "category": "CONTAINER", "file": "app.jar"},
+        ])
+
+        self.assertEqual(2, summary["total"])
+        self.assertEqual(1, summary["uniqueIssues"])
+        self.assertEqual(1, summary["uniqueBySeverity"]["CRITICAL"])
 
     def test_trivy_keeps_the_package_type(self):
         findings = normalize_findings.trivy_findings({
@@ -159,6 +176,18 @@ class EvaluatePolicyTest(unittest.TestCase):
             ["Trivy: informe ausente"],
             decision["analysisErrors"],
         )
+
+    def test_decision_lists_each_vulnerability_id_once(self):
+        decision = evaluate_policy.evaluate(
+            [
+                {"id": "CVE-DUPLICATE", "severity": "CRITICAL", "category": "SCA"},
+                {"id": "CVE-DUPLICATE", "severity": "CRITICAL", "category": "CONTAINER"},
+            ],
+            self.policy,
+            self.analysis_success,
+        )
+
+        self.assertEqual(["CVE-DUPLICATE"], decision["blockingFindingIds"])
 
 
 class MockRemediationTest(unittest.TestCase):

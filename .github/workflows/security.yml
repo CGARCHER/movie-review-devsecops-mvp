@@ -178,12 +178,13 @@ jobs:
             -exec cp {} reports/sca/trivy-sca.json \; 2>/dev/null || true
           find downloaded/movie-container -name trivy.json \
             -exec cp {} reports/container/trivy.json \; 2>/dev/null || true
-      - name: Normalizar y evaluar
+      - name: Validar y normalizar informes
         run: |
           python scripts/validate_reports.py
           python scripts/normalize_findings.py --commit "${{ github.sha }}"
           python scripts/mock_remediation.py
-          python scripts/evaluate_policy.py --enforce
+      - name: Evaluar politica de seguridad
+        run: python scripts/evaluate_policy.py
       - name: Publicar resumen visual de seguridad
         if: always()
         shell: bash
@@ -206,6 +207,7 @@ jobs:
 
           summary = findings_data.get("summary", {})
           counts = summary.get("bySeverity", {})
+          unique_counts = summary.get("uniqueBySeverity", {})
           findings = findings_data.get("findings", [])
           status = decision_data.get("status", "UNKNOWN")
           analyzer_results = {
@@ -231,11 +233,14 @@ jobs:
               "",
               f"### {status_icon} Estado de seguridad: **{status}**",
               "",
-              "| Severidad | Hallazgos |",
-              "|---|---:|",
+              "| Severidad | Instancias | Problemas únicos |",
+              "|---|---:|---:|",
           ]
           for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
-              lines.append(f"| `{severity}` | {counts.get(severity, 0)} |")
+              lines.append(
+                  f"| `{severity}` | {counts.get(severity, 0)} | "
+                  f"{unique_counts.get(severity, 0)} |"
+              )
 
           lines.extend([
               "",
@@ -268,7 +273,14 @@ jobs:
                   "|---|---|---|---|---|---|",
               ])
               for finding in findings:
-                  location = finding.get("file") or finding.get("component") or "No disponible"
+                  component = finding.get("component")
+                  version = finding.get("version")
+                  if component:
+                      location = f"{component} · {version}" if version else component
+                  else:
+                      location = finding.get("file") or "No disponible"
+                      if finding.get("line"):
+                          location = f"{location}:{finding['line']}"
                   lines.append(
                       f"| `{cell(finding.get('id'))}` | {cell(finding.get('tool'))} | "
                       f"{cell(finding.get('category'))} | `{cell(finding.get('severity'))}` | "
@@ -283,14 +295,58 @@ jobs:
           ])
           Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
-      - name: Bloquear si falla un analizador
-        if: always() && (needs.sast.result != 'success' || needs.sca.result != 'success' || needs.container.result != 'success')
-        run: |
-          echo "No se permite aprobar el despliegue: al menos un analizador no terminó correctamente."
-          exit 1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: movie-security-report-${{ github.sha }}
           path: reports/
           retention-days: 30
+      - name: Aplicar puerta de seguridad para el despliegue
+        if: always()
+        shell: bash
+        env:
+          SAST_RESULT: ${{ needs.sast.result }}
+          SCA_RESULT: ${{ needs.sca.result }}
+          CONTAINER_RESULT: ${{ needs.container.result }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          analyzer_path = Path("reports/normalized/analyzer-status.json")
+          decision_path = Path("reports/normalized/decision.json")
+          analyzer = json.loads(analyzer_path.read_text(encoding="utf-8")) if analyzer_path.exists() else {}
+          decision = json.loads(decision_path.read_text(encoding="utf-8")) if decision_path.exists() else {}
+          jobs = {
+              "SAST": os.environ.get("SAST_RESULT"),
+              "SCA": os.environ.get("SCA_RESULT"),
+              "Contenedor": os.environ.get("CONTAINER_RESULT"),
+          }
+          failed_jobs = [name for name, result in jobs.items() if result != "success"]
+
+          if failed_jobs or analyzer.get("status") != "SUCCESS":
+              details = ", ".join(failed_jobs) or "; ".join(analyzer.get("errors", []))
+              print(f"::error title=Error tecnico del analisis::{details}")
+              print("Despliegue impedido porque el analisis no termino correctamente.")
+              sys.exit(3)
+
+          status = decision.get("status", "UNKNOWN")
+          if status == "BLOCKED":
+              identifiers = decision.get("blockingFindingIds", [])
+              detail = ", ".join(identifiers) if identifiers else "sin identificadores disponibles"
+              print(f"::error title=Despliegue bloqueado por la politica::{len(identifiers)} vulnerabilidades criticas: {detail}")
+              print("Los analizadores funcionaron correctamente, pero la politica impide desplegar este commit.")
+              sys.exit(2)
+          if status == "ANALYSIS_ERROR":
+              print("::error title=Error tecnico del analisis::La decision de seguridad es ANALYSIS_ERROR.")
+              sys.exit(3)
+          if status == "REVIEW_REQUIRED":
+              print("::warning title=Revision de seguridad requerida::Hay vulnerabilidades altas que requieren revision.")
+          elif status != "APPROVED":
+              print(f"::error title=Decision de seguridad desconocida::Estado recibido: {status}")
+              sys.exit(3)
+          else:
+              print("Puerta de seguridad superada: el commit puede desplegarse.")
+          PY

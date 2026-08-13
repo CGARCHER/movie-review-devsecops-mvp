@@ -26,13 +26,27 @@ devuelve `ANALYSIS_ERROR`.
 duplicados idénticos. `uniqueIssues` agrupa las instancias que comparten:
 
 - identificador;
-- categoría;
 - componente;
 - versión instalada;
 - versión corregida.
 
-Esta separación evita presentar todas las apariciones de un mismo problema
-como vulnerabilidades completamente independientes.
+La superficie que lo detectó (`SCA` o `CONTAINER`) no crea por sí sola un
+problema nuevo. Esta separación conserva la trazabilidad de cada instancia sin
+presentar el mismo problema como vulnerabilidades independientes.
+
+## Puerta de seguridad
+
+El job `aggregate` valida y publica primero todos los resultados. Su último
+paso aplica la puerta de seguridad:
+
+- un error técnico produce `ANALYSIS_ERROR`;
+- un hallazgo crítico produce `BLOCKED` y hace fallar deliberadamente el job;
+- `REVIEW_REQUIRED` queda visible como advertencia;
+- `APPROVED` permite que producción consulte y acepte el informe.
+
+Por tanto, un `aggregate` rojo con el mensaje "Despliegue bloqueado por la
+política" indica que el control funcionó. No equivale a un fallo del motor de
+análisis.
 
 ## Promoción entre entornos
 

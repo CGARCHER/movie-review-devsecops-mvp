@@ -92,9 +92,16 @@ La política utiliza cuatro estados:
 Producción exige expresamente el estado `APPROVED`. El pipeline no interpreta
 la ausencia de resultados como ausencia de vulnerabilidades.
 
+El job `aggregate` separa el procesamiento de la decisión: validar,
+normalizar, evaluar y publicar el informe deben terminar correctamente. El
+último paso, `Aplicar puerta de seguridad para el despliegue`, es el único que
+termina en rojo cuando la decisión es `BLOCKED`; ese rojo significa que la
+protección funcionó y no que los analizadores fallaran.
+
 El resumen diferencia entre las instancias detectadas y los problemas únicos.
-Un mismo identificador puede aparecer varias veces en capas, rutas o
-componentes diferentes.
+Una vulnerabilidad detectada tanto por SCA como dentro del contenedor conserva
+ambas instancias, pero cuenta una sola vez como problema si coinciden el
+componente y las versiones instalada y corregida.
 
 Los casos deliberadamente vulnerables se encuentran en `security-fixtures` y
 no se compilan ni se incluyen en Docker. Sus resultados se mantienen separados

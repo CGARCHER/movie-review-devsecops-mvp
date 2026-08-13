@@ -26,10 +26,13 @@ def evaluate(findings: list[dict], policy: dict, analysis_status: dict) -> dict:
     else:
         status = "APPROVED"
 
+    blocking_ids = list(dict.fromkeys(item.get("id") for item in blocking if item.get("id")))
+    review_ids = list(dict.fromkeys(item.get("id") for item in review if item.get("id")))
+
     return {
         "status": status,
-        "blockingFindingIds": [item.get("id") for item in blocking],
-        "reviewFindingIds": [item.get("id") for item in review],
+        "blockingFindingIds": blocking_ids,
+        "reviewFindingIds": review_ids,
         "analysisErrors": analysis_status.get("errors", []),
     }
 
