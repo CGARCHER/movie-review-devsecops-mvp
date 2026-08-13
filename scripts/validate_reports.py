@@ -42,12 +42,24 @@ def validate_json_report(path: Path, required_key: str) -> tuple[str, str | None
     return "SUCCESS", None
 
 
-def build_status(paths: dict[str, Path]) -> dict[str, Any]:
+def build_status(
+    paths: dict[str, Path],
+    not_applicable: set[str] | None = None,
+) -> dict[str, Any]:
     analyzers: dict[str, Any] = {}
     errors: list[str] = []
+    not_applicable = not_applicable or set()
 
     for key, path in paths.items():
         display_name, required_key = REPORTS[key]
+        if key in not_applicable:
+            analyzers[key] = {
+                "name": display_name,
+                "status": "NOT_APPLICABLE",
+                "report": path.as_posix(),
+                "message": "El proyecto no contiene un Dockerfile unico.",
+            }
+            continue
         status, message = validate_json_report(path, required_key)
         analyzers[key] = {
             "name": display_name,
@@ -85,17 +97,31 @@ def main() -> None:
         default=Path("reports/normalized/analyzer-status.json"),
     )
     parser.add_argument(
+        "--container-status",
+        type=Path,
+        default=Path("reports/container/status.json"),
+    )
+    parser.add_argument(
         "--enforce",
         action="store_true",
         help="Devuelve un código de error si algún informe no es válido.",
     )
     args = parser.parse_args()
 
+    not_applicable: set[str] = set()
+    if args.container_status.is_file():
+        try:
+            marker = json.loads(args.container_status.read_text(encoding="utf-8"))
+            if marker.get("status") == "NOT_APPLICABLE":
+                not_applicable.add("container")
+        except (OSError, UnicodeError, json.JSONDecodeError, AttributeError):
+            pass
+
     result = build_status({
         "sast": args.sast,
         "sca": args.sca,
         "container": args.container,
-    })
+    }, not_applicable)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(result, ensure_ascii=False, indent=2),

@@ -130,7 +130,13 @@ function renderAnalyzerStatus(statusDocument) {
     const count = allFindings.filter((finding) => finding.tool === toolName).length;
     const status = safeValue(analyzer.status, "UNKNOWN").toUpperCase();
     const item = document.createElement("div");
-    const stateClass = status !== "SUCCESS" ? "error" : count > 0 ? "success" : "empty";
+    const stateClass = status === "NOT_APPLICABLE"
+      ? "empty"
+      : status !== "SUCCESS"
+        ? "error"
+        : count > 0
+          ? "success"
+          : "empty";
     item.className = `analyzer-status-item ${stateClass}`;
 
     const identity = document.createElement("div");
@@ -144,7 +150,9 @@ function renderAnalyzerStatus(statusDocument) {
     detail.className = "analyzer-result";
     detail.textContent = status === "SUCCESS"
       ? `${count} hallazgos`
-      : safeValue(analyzer.message, `Informe ${status.toLowerCase()}`);
+      : status === "NOT_APPLICABLE"
+        ? "No aplicable"
+        : safeValue(analyzer.message, `Informe ${status.toLowerCase()}`);
     item.append(identity, detail);
     container.appendChild(item);
   }
@@ -279,79 +287,7 @@ function patchChanges(content) {
   };
 }
 
-function manualVisualPatch(result, finding) {
-  const component = safeValue(finding.component, "");
-  const file = safeValue(finding.file, "");
-  const isMavenDependency = component.includes(":") || file.endsWith("pom.xml");
-  const remediationContext = [result.recommendation, result.explanation]
-    .map((value) => safeValue(value, ""))
-    .join(" ");
-  const isContainerPackage = !component.includes(":") && (
-    file.endsWith("Dockerfile")
-    || /\b(?:alpine|apk|contenedor|imagen base)\b/i.test(remediationContext)
-  );
-
-  const versionSources = [
-    safeValue(finding.fixedVersion, ""),
-    safeValue(result.recommendation, ""),
-    safeValue(result.explanation, ""),
-  ];
-  const version = versionSources
-    .map((value) => value.match(/\b\d+\.\d+\.\d+(?:[-.][A-Za-z0-9]+)*\b/)?.[0])
-    .find(Boolean);
-  if (!version) {
-    return null;
-  }
-
-  if (isContainerPackage && /^[A-Za-z0-9+_.-]+$/.test(component)) {
-    return {
-      available: true,
-      manual: true,
-      file: "Dockerfile",
-      content: [
-        "--- Dockerfile",
-        "+++ Dockerfile",
-        "@@ -9,3 +9,3 @@",
-        " FROM eclipse-temurin:17-jre-alpine",
-        "-RUN addgroup -S spring && adduser -S spring -G spring",
-        `+RUN apk add --no-cache '${component}>=${version}' && addgroup -S spring && adduser -S spring -G spring`,
-        " WORKDIR /app",
-      ].join("\n"),
-    };
-  }
-
-  if (!isMavenDependency) {
-    return null;
-  }
-
-  const [groupId = "", artifactId = ""] = component.split(":");
-  const normalizedArtifact = artifactId.toLowerCase();
-  const propertyName = normalizedArtifact.includes("tomcat")
-    ? "tomcat.version"
-    : groupId === "org.springframework" && normalizedArtifact.startsWith("spring-")
-      ? "spring-framework.version"
-      : "";
-  if (!propertyName) {
-    return null;
-  }
-
-  return {
-    available: true,
-    manual: true,
-    file: "pom.xml",
-    content: [
-      "--- pom.xml",
-      "+++ pom.xml",
-      "@@ -20,3 +20,4 @@",
-      "     <properties>",
-      "         <java.version>17</java.version>",
-      `+        <${propertyName}>${version}</${propertyName}>`,
-      "     </properties>",
-    ].join("\n"),
-  };
-}
-
-function renderEditor(patchAvailable, content, file, manual = false) {
+function renderEditor(patchAvailable, content, file, generatedFromSource = false) {
   const editor = byId("remediation-editor");
   const code = byId("remediation-editor-code");
   if (!patchAvailable) {
@@ -364,8 +300,8 @@ function renderEditor(patchAvailable, content, file, manual = false) {
   const fileName = fullFile.split(/[\\/]/).pop() || "Dockerfile";
   byId("remediation-editor-tab").textContent = fileName;
   byId("remediation-editor-file").textContent = fullFile;
-  byId("remediation-editor-status").textContent = manual
-    ? "ejemplo manual orientativo"
+  byId("remediation-editor-status").textContent = generatedFromSource
+    ? "cambio calculado sobre el fichero"
     : "cambio sugerido";
   code.replaceChildren();
 
@@ -466,7 +402,7 @@ function renderEditor(patchAvailable, content, file, manual = false) {
   editor.classList.remove("hidden");
 }
 
-function renderPatchInstructions(patchAvailable, content, file, manual = false) {
+function renderPatchInstructions(patchAvailable, content, file, generatedFromSource = false) {
   const changes = patchAvailable
     ? patchChanges(content)
     : { before: "", after: "", insertionPoint: "" };
@@ -498,7 +434,7 @@ function renderPatchInstructions(patchAvailable, content, file, manual = false) 
     "hidden",
     !patchAvailable || (!changes.before && !changes.after),
   );
-  renderEditor(patchAvailable, content, file, manual);
+  renderEditor(patchAvailable, content, file, generatedFromSource);
 }
 
 function renderRemediation(result, finding) {
@@ -507,9 +443,6 @@ function renderRemediation(result, finding) {
   const severity = safeValue(finding.severity, "INFO").toUpperCase();
   const patch = result.patchProposal ?? {};
   const patchAvailable = patch.available === true;
-  const manualPatch = patchAvailable ? null : manualVisualPatch(result, finding);
-  const visualPatch = patchAvailable ? patch : manualPatch;
-  const visualPatchAvailable = visualPatch?.available === true;
   const warnings = Array.isArray(result.warnings) ? result.warnings : [];
   const duration = Number(result.durationMs);
   const durationText = Number.isFinite(duration) ? `${(duration / 1000).toFixed(1)} s` : "—";
@@ -528,19 +461,15 @@ function renderRemediation(result, finding) {
   byId("remediation-learning").textContent = safeValue(result.learningNote);
 
   byId("remediation-confidence").className =
-    `confidence-badge${manualPatch ? " manual" : ""}`;
+    "confidence-badge";
   byId("remediation-confidence").textContent = patchAvailable
-    ? `Confianza ${confidenceLabels[safeValue(patch.confidence, "LOW")] ?? "baja"}`
-    : manualPatch
-      ? "Ejemplo visual"
-      : "Sin cambio propuesto";
+    ? patch.generatedFromSource === true
+      ? "Basado en el fichero"
+      : `Confianza ${confidenceLabels[safeValue(patch.confidence, "LOW")] ?? "baja"}`
+    : "Sin cambio propuesto";
   byId("remediation-patch-file").textContent = patchAvailable
     ? `Fichero que debes modificar: ${safeValue(patch.file)}`
     : "No hay ningún archivo que modificar automáticamente.";
-  if (manualPatch) {
-    byId("remediation-patch-file").textContent =
-      `Fichero orientativo: ${manualPatch.file} (cambio manual)`;
-  }
   byId("remediation-patch-reason").textContent = safeValue(
     patch.reason,
     "No hay contexto suficiente para preparar un cambio seguro.",
@@ -551,10 +480,10 @@ function renderRemediation(result, finding) {
   byId("remediation-patch-code").querySelector("code").textContent =
     patchAvailable ? safeValue(patch.content) : "";
   renderPatchInstructions(
-    visualPatchAvailable,
-    visualPatch?.content,
-    visualPatch?.file,
-    manualPatch !== null,
+    patchAvailable,
+    patch?.content,
+    patch?.file,
+    patch?.generatedFromSource === true,
   );
 
   const warningList = byId("remediation-warning-list");

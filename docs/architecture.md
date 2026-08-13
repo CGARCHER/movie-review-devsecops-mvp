@@ -1,4 +1,4 @@
-# Arquitectura inicial
+# Arquitectura del prototipo
 
 ```mermaid
 flowchart LR
@@ -6,7 +6,8 @@ flowchart LR
     APP --> DB[(PostgreSQL)]
     DEV[Desarrollador] --> GH[GitHub]
     GH --> CI[CI]
-    GH --> SEC[Seguridad asincrona]
+    GH --> PROFILE[Deteccion Spring Boot]
+    PROFILE --> SEC[Seguridad asincrona]
     SEC --> SAST[Semgrep]
     SEC --> SCA[Trivy SCA]
     SEC --> IMG[Trivy]
@@ -22,3 +23,15 @@ flowchart LR
 La aplicacion es autonoma y no depende de servicios de negocio externos. En
 local puede usar H2; en Dokploy se conectara a PostgreSQL mediante variables de
 entorno.
+
+La aplicacion de peliculas es el caso de validacion, pero no forma parte del
+nucleo del analizador. El workflow detecta Maven o Gradle, la version de Java,
+la raiz del proyecto y el Dockerfile. Tambien puede ser llamado desde otro
+repositorio mediante `workflow_call`. Las reglas, los fixtures, la politica y
+los normalizadores se obtienen del repositorio del nucleo, de modo que no hay
+que mantener una copia diferente para cada aplicacion Spring Boot.
+
+Si no existe un Dockerfile unico, el analisis SAST y SCA continua y la
+tecnologia de contenedores se registra como no aplicable. Si se detectan varios
+proyectos Spring Boot, el proceso se detiene para que se indique `project_path`;
+elegir un modulo de forma silenciosa podria producir un informe incorrecto.

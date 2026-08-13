@@ -78,8 +78,42 @@ Ejemplo de reseña:
 ## Pipeline
 
 - `ci.yml`: compila, prueba y construye la imagen.
-- `security.yml`: ejecuta Semgrep y Trivy en paralelo; Trivy analiza tanto las dependencias (SCA) como la imagen del contenedor.
+- `security.yml`: núcleo reutilizable que ejecuta Semgrep y Trivy en paralelo;
+  Trivy analiza tanto las dependencias (SCA) como la imagen del contenedor.
 - `deploy-dokploy.yml`: dispara manualmente un despliegue protegido por entorno.
+
+El análisis de seguridad no conoce el nombre de esta aplicación. Antes de
+ejecutar las herramientas detecta el proyecto Spring Boot, su sistema de
+construcción, la versión de Java, las fuentes y el Dockerfile. Admite Maven y
+Gradle, también cuando la aplicación está en un subdirectorio. Si hay varios
+módulos Spring Boot posibles, se detiene y solicita `project_path` para no
+analizar el módulo equivocado.
+
+### Utilizar el analizador en otro proyecto Spring Boot
+
+Un repositorio externo solo necesita un workflow llamador. Con la estructura
+habitual no hay que indicar rutas ni modificar `pom.xml`, `build.gradle` o
+`build.gradle.kts`:
+
+```yaml
+name: Seguridad
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  security:
+    uses: CGARCHER/movie-review-devsecops-mvp/.github/workflows/security.yml@main
+```
+
+Para un monorepositorio se puede añadir `with: project_path: servicios/api`.
+La referencia `main` se sustituirá por una etiqueta estable al publicar la
+primera versión del prototipo. El workflow reutilizable analiza el commit del
+repositorio llamador y obtiene las reglas y los normalizadores desde el núcleo,
+por lo que una mejora de la plataforma no obliga a copiar scripts en cada
+aplicación.
 
 La política utiliza cuatro estados:
 
@@ -134,7 +168,8 @@ El webhook de despliegue se guarda en GitHub como secreto de entorno
 
 Los informes generados por GitHub Actions se descargan desde el propio
 contenedor `security-dashboard`. Este incluye `gh`, busca la última ejecución
-terminada de `security.yml` y descarga el artefacto `movie-security-report-*`.
+terminada de `security.yml` y descarga el artefacto
+`spring-boot-security-report-*`.
 
 Antes de utilizarlo hay que crear dos ficheros locales:
 

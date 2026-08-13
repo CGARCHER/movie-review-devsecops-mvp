@@ -53,9 +53,7 @@ services:
       - ai_api_token
     volumes:
       - ./reports:/workspace/reports
-      - ./pom.xml:/workspace/source/pom.xml:ro
-      - ./Dockerfile:/workspace/source/Dockerfile:ro
-      - ./src:/workspace/source/src:ro
+      - ./:/workspace/source:ro
     read_only: true
     tmpfs:
       - /tmp:size=32m,noexec,nosuid

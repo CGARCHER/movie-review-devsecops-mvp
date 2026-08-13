@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import difflib
 import mimetypes
 import os
 import re
@@ -27,7 +28,7 @@ DASHBOARD_ROOT = Path(
 )
 AI_API_URL = os.getenv(
     "AI_API_URL",
-    "https://ai-api.cgarcher.dev/api/v1/remediations",
+    "",
 )
 AI_API_TOKEN_FILE = Path(
     os.getenv("AI_API_TOKEN_FILE", "/run/secrets/ai_api_token")
@@ -101,26 +102,49 @@ def selected_finding(
 
 
 def source_file_for_finding(finding: dict[str, Any], source_root: Path) -> Path | None:
-    """Localiza únicamente ficheros de código permitidos para la remediación."""
+    """Localiza un fichero relevante sin asumir Maven ni una ruta concreta."""
     category = str(finding.get("category", "")).upper()
+    root = source_root.resolve()
+
+    def unique_file(names: tuple[str, ...]) -> Path | None:
+        direct = [root / name for name in names if (root / name).is_file()]
+        if len(direct) == 1:
+            return direct[0]
+        found = sorted(
+            path
+            for name in names
+            for path in root.rglob(name)
+            if not any(
+                part in {".git", "build", "reports", "target"}
+                for part in path.parts
+            )
+        )
+        return found[0] if len(found) == 1 else None
+
     if category == "SCA":
-        relative_path = Path("pom.xml")
+        candidate = unique_file(("pom.xml", "build.gradle", "build.gradle.kts"))
     elif category == "CONTAINER":
         is_maven_dependency = (
             finding.get("packageType") == "jar"
             or ":" in str(finding.get("component") or "")
         )
-        relative_path = Path("pom.xml" if is_maven_dependency else "Dockerfile")
+        candidate = (
+            unique_file(("pom.xml", "build.gradle", "build.gradle.kts"))
+            if is_maven_dependency
+            else unique_file(("Dockerfile",))
+        )
     elif category == "SAST":
         file_value = str(finding.get("file") or "").replace("\\", "/")
         relative_path = Path(file_value)
-        if relative_path.suffix != ".java" or not file_value.startswith("src/"):
+        if relative_path.is_absolute() or relative_path.suffix not in {".java", ".kt"}:
             return None
+        candidate = (root / relative_path).resolve()
     else:
         return None
 
-    root = source_root.resolve()
-    candidate = (root / relative_path).resolve()
+    if candidate is None:
+        return None
+    candidate = candidate.resolve()
     try:
         candidate.relative_to(root)
     except ValueError:
@@ -198,7 +222,7 @@ def call_ai_api(payload: dict[str, Any]) -> dict[str, Any]:
         headers={
             "Authorization": f"Bearer {read_ai_token()}",
             "Content-Type": "application/json",
-            "User-Agent": "movie-review-security-dashboard/1.0",
+            "User-Agent": "spring-boot-security-dashboard/1.0",
         },
         method="POST",
     )
@@ -238,6 +262,91 @@ def call_ai_api(payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(content, str) or "--- " not in content or "+++ " not in content:
             raise RequestError("La propuesta no contiene una diferencia válida.")
     return result
+
+
+def local_patch_proposal(
+    result: dict[str, Any],
+    finding: dict[str, Any],
+    source_root: Path = SOURCE_ROOT,
+) -> dict[str, Any]:
+    """Completa una propuesta ausente utilizando el fichero real como base."""
+    current_patch = result.get("patchProposal")
+    if isinstance(current_patch, dict) and current_patch.get("available") is True:
+        return result
+
+    source_file = source_file_for_finding(finding, source_root)
+    fixed_version = str(finding.get("fixedVersion") or "").split(",")[0].strip()
+    if source_file is None or not fixed_version:
+        return result
+    try:
+        original = source_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return result
+
+    updated = original
+    current_version = str(finding.get("version") or "").strip()
+    component = str(finding.get("component") or "")
+    suffix = source_file.name.lower()
+
+    if current_version and current_version in original:
+        updated = original.replace(current_version, fixed_version, 1)
+    elif suffix == "pom.xml":
+        artifact = component.split(":")[-1].lower()
+        if "tomcat" in artifact:
+            property_name = "tomcat.version"
+        elif component.startswith("org.springframework:"):
+            property_name = "spring-framework.version"
+        else:
+            property_name = ""
+        if property_name and f"<{property_name}>" not in original:
+            property_line = f"        <{property_name}>{fixed_version}</{property_name}>\n"
+            if "</properties>" in original:
+                updated = original.replace(
+                    "    </properties>", property_line + "    </properties>", 1
+                )
+    elif suffix in {"build.gradle", "build.gradle.kts"}:
+        # Para Gradle solo se automatiza una sustitucion existente. Declarar
+        # una restriccion nueva sin conocer el DSL y los plugins seria ambiguo.
+        updated = original
+    elif source_file.name == "Dockerfile" and re.fullmatch(r"[A-Za-z0-9+_.-]+", component):
+        lines = original.splitlines(keepends=True)
+        final_from = max(
+            (index for index, line in enumerate(lines) if line.lstrip().upper().startswith("FROM ")),
+            default=-1,
+        )
+        for index in range(final_from + 1, len(lines)):
+            line = lines[index]
+            if line.lstrip().upper().startswith("RUN ") and (
+                "apk " in original.lower() or "alpine" in original.lower()
+            ):
+                command = line.rstrip("\r\n")
+                newline = "\r\n" if line.endswith("\r\n") else "\n"
+                lines[index] = (
+                    command.replace("RUN ", f"RUN apk add --no-cache '{component}>={fixed_version}' && ", 1)
+                    + newline
+                )
+                updated = "".join(lines)
+                break
+
+    if updated == original:
+        return result
+
+    relative = source_file.relative_to(source_root.resolve()).as_posix()
+    patch = "".join(difflib.unified_diff(
+        original.splitlines(keepends=True),
+        updated.splitlines(keepends=True),
+        fromfile=relative,
+        tofile=relative,
+        n=3,
+    ))
+    enriched = dict(result)
+    enriched["patchProposal"] = {
+        "available": True,
+        "file": relative,
+        "content": patch,
+        "generatedFromSource": True,
+    }
+    return enriched
 
 
 def remediation_markdown(result: dict[str, Any]) -> str:
@@ -422,6 +531,7 @@ class ReportHandler(BaseHTTPRequestHandler):
 
             finding, run_directory = selected_finding(finding_index, finding_id)
             result = call_ai_api(remediation_payload(finding))
+            result = local_patch_proposal(result, finding)
             save_remediation(result, run_directory)
         except RequestError as error:
             self.send_json(400, {"error": str(error)})
