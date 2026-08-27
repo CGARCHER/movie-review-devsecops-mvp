@@ -3,6 +3,15 @@
 Aplicacion web sencilla para dar de alta peliculas y publicar reseñas. Es el
 primer caso de estudio del TFM sobre un pipeline DevSecOps asincrono.
 
+## Estado del MVP
+
+Esta versión cierra el primer ciclo funcional del TFM. El repositorio se
+mantiene como caso de referencia para comprobar el pipeline, el dashboard y la
+remediación asistida. A partir de este punto solo recibirá correcciones
+necesarias. La reutilización en proyectos Spring Boot existentes continúa en
+`DevSecOps Learning Initializer`, que pasa a ser la herramienta final orientada
+al alumnado.
+
 ## Funcionalidad
 
 - Alta y listado de peliculas.
@@ -153,9 +162,11 @@ El entorno de desarrollo utiliza la rama `develop` y el fichero
 ```text
 POSTGRES_PASSWORD=<secreto de la base de datos de desarrollo>
 GH_TOKEN=<token de GitHub con acceso de lectura a Actions>
-AI_API_TOKEN=<Bearer Token de la API de IA>
-AI_API_URL=https://ai-api.cgarcher.dev/api/v1/remediations
 ```
+
+La remediación mediante IA se utiliza únicamente en local. El dashboard de
+`develop` permite consultar los informes, pero no envía hallazgos a la API de
+IA.
 
 El entorno de producción utiliza la rama `main` y el fichero
 `compose.main.yml`. Solo requiere `POSTGRES_PASSWORD` y, opcionalmente,
@@ -210,6 +221,10 @@ puerto `8081` y está pensado para el entorno local de desarrollo. Las
 recomendaciones generadas deben revisarse manualmente antes de modificar el
 proyecto.
 
+El contenedor solo recibe en modo lectura `pom.xml`, `Dockerfile` y `src`. Los
+ficheros `.env` y `.secrets` no se montan como código fuente y no forman parte
+del contexto que puede consultar la remediación.
+
 ### Dashboard de la rama develop en Dokploy
 
 El fichero `compose.dev.yml` permite desplegar el dashboard en el entorno
@@ -217,8 +232,10 @@ de desarrollo sin publicarlo junto a la aplicación de producción. Este desplie
 consulta solo la última ejecución terminada de `security.yml` en la rama
 `develop`.
 
-Las variables necesarias son las indicadas en la configuración de Dokploy. Los
-tokens se montan como secretos dentro del contenedor. El dominio del
-dashboard debe asociarse al servicio `security-dashboard`, en su puerto interno
-`8080`. Como el panel permite descargar informes y solicitar remediaciones, su
-acceso debe limitarse mediante Cloudflare Access.
+Las variables necesarias son las indicadas en la configuración de Dokploy. El
+token de GitHub se configura como variable protegida y se utiliza únicamente
+para descargar los informes. El dominio del dashboard debe asociarse al
+servicio `security-dashboard`, en su puerto interno `8080`. Aunque la
+remediación mediante IA está desactivada en este entorno, el acceso al panel
+debe limitarse mediante Cloudflare Access porque contiene información de
+seguridad del proyecto.

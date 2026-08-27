@@ -26,10 +26,10 @@ entorno.
 
 La aplicacion de peliculas es el caso de validacion, pero no forma parte del
 nucleo del analizador. El workflow detecta Maven o Gradle, la version de Java,
-la raiz del proyecto y el Dockerfile. Tambien puede ser llamado desde otro
-repositorio mediante `workflow_call`. Las reglas, los fixtures, la politica y
-los normalizadores se obtienen del repositorio del nucleo, de modo que no hay
-que mantener una copia diferente para cada aplicacion Spring Boot.
+la raiz del proyecto y el Dockerfile. Esta version queda como referencia
+funcional del MVP. La evolucion reutilizable se concentra en `DevSecOps
+Learning Initializer`, que genera la configuracion necesaria para incorporar
+el mismo flujo a proyectos Spring Boot existentes sin modificar el original.
 
 Si no existe un Dockerfile unico, el analisis SAST y SCA continua y la
 tecnologia de contenedores se registra como no aplicable. Si se detectan varios

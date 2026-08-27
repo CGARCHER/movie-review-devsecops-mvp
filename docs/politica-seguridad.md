@@ -55,5 +55,7 @@ análisis.
 - Producción: requiere una decisión `APPROVED` asociada exactamente al commit
   que se pretende desplegar.
 
-La futura remediación mediante IA será informativa. No podrá modificar esta
-política ni aprobar un despliegue.
+La remediación mediante IA es informativa y solo está habilitada en el entorno
+local. Puede explicar un hallazgo y proponer un cambio para que lo revise el
+alumno, pero no modifica el proyecto, no altera esta política y no puede
+aprobar un despliegue.

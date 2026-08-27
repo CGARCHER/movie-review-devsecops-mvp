@@ -3,6 +3,9 @@ name: Security analysis (asynchronous)
 on:
   push:
   pull_request:
+  schedule:
+    # Repite el análisis cada lunes aunque el proyecto no reciba nuevos commits.
+    - cron: "0 6 * * 1"
   workflow_call:
     inputs:
       project_path:
