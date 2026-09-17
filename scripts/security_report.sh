@@ -1,4 +1,5 @@
 #!/bin/sh
+# Descarga y prepara el último informe de seguridad de GitHub Actions.
 set -eu
 
 repository="${GITHUB_REPOSITORY:-}"
