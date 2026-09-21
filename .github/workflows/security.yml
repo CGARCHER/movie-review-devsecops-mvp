@@ -2,16 +2,56 @@ name: Security analysis (asynchronous)
 
 on:
   push:
-    branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+  schedule:
+    # Repite el análisis cada lunes aunque el proyecto no reciba nuevos commits.
+    - cron: "0 6 * * 1"
+  workflow_call:
+    inputs:
+      project_path:
+        description: Ruta del proyecto Spring Boot o auto para detectarla
+        required: false
+        type: string
+        default: auto
+      dockerfile:
+        description: Ruta relativa del Dockerfile o auto
+        required: false
+        type: string
+        default: auto
+      engine_repository:
+        description: Repositorio que contiene el nucleo del prototipo
+        required: false
+        type: string
+        default: CGARCHER/movie-review-devsecops-mvp
+      engine_ref:
+        description: Version estable del nucleo
+        required: false
+        type: string
+        default: main
   workflow_dispatch:
+    inputs:
+      project_path:
+        description: Ruta del proyecto Spring Boot o auto para detectarla
+        required: false
+        default: auto
+      dockerfile:
+        description: Ruta relativa del Dockerfile o auto
+        required: false
+        default: auto
+      engine_repository:
+        description: Repositorio que contiene el nucleo del prototipo
+        required: false
+        default: ""
+      engine_ref:
+        description: Rama o etiqueta del nucleo; vacio usa la rama actual
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: movie-security-${{ github.ref }}
+  group: spring-boot-security-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -20,79 +60,167 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Obtener nucleo generico
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ inputs.engine_repository || github.repository }}
+          ref: ${{ inputs.engine_ref || (inputs.engine_repository == '' && github.sha) || 'main' }}
+          path: .security-engine
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.13"
+      - name: Detectar proyecto Spring Boot
+        id: profile
+        run: |
+          python .security-engine/scripts/project_profile.py \
+            --project-path "${{ inputs.project_path || 'auto' }}" \
+            --dockerfile "${{ inputs.dockerfile || 'auto' }}" \
+            --github-output "$GITHUB_OUTPUT"
       - run: pip install --disable-pip-version-check semgrep==1.170.0
       - name: Analizar codigo real
         run: |
           mkdir -p reports/sast
-          semgrep scan --config security/semgrep.yml --json \
-            --output reports/sast/semgrep.json src
+          semgrep scan --config .security-engine/security/semgrep.yml --json \
+            --output reports/sast/semgrep.json \
+            --exclude .security-engine --exclude security-fixtures \
+            --exclude target --exclude build --exclude reports \
+            ${{ steps.profile.outputs.project_root }}
           test -s reports/sast/semgrep.json
       - name: Validar fixture SAST
         run: |
           mkdir -p reports/demo/sast
-          semgrep scan --config security/semgrep.yml --json \
-            --output reports/demo/sast/semgrep-fixture.json security-fixtures/sast
+          semgrep scan --config .security-engine/security/semgrep.yml --json \
+            --output reports/demo/sast/semgrep-fixture.json \
+            .security-engine/security-fixtures/sast
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("reports/demo/sast/semgrep-fixture.json").read_text(encoding="utf-8"))
+          findings = report.get("results", [])
+          expected = {
+              "tfm-java-command-injection",
+              "tfm-java-hardcoded-secret",
+              "tfm-java-weak-md5",
+          }
+          detected = {item.get("check_id", "").split(".")[-1] for item in findings}
+          missing = sorted(expected - detected)
+          if missing:
+              raise SystemExit(f"Semgrep no detecto los fixtures esperados: {', '.join(missing)}")
+          print(f"Fixtures SAST detectados: {len(findings)}")
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: movie-sast
+          name: spring-boot-sast
           path: |
             reports/sast/
             reports/demo/sast/
+            reports/project-profile.json
           retention-days: 30
 
   sca:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-    concurrency:
-      group: movie-review-nvd-sca
-      cancel-in-progress: false
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Obtener nucleo generico
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ inputs.engine_repository || github.repository }}
+          ref: ${{ inputs.engine_ref || (inputs.engine_repository == '' && github.sha) || 'main' }}
+          path: .security-engine
+          persist-credentials: false
+      - name: Detectar proyecto Spring Boot
+        id: profile
+        run: |
+          python .security-engine/scripts/project_profile.py \
+            --project-path "${{ inputs.project_path || 'auto' }}" \
+            --dockerfile "${{ inputs.dockerfile || 'auto' }}" \
+            --github-output "$GITHUB_OUTPUT"
       - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           distribution: temurin
-          java-version: "17"
-          cache: maven
-      - name: Preparar clave de cache de la NVD
-        id: nvd-cache-date
-        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-      - name: Restaurar datos de Dependency-Check
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.m2/repository/org/owasp/dependency-check-data
-          key: dependency-check-nvd-${{ runner.os }}-${{ steps.nvd-cache-date.outputs.date }}
-          restore-keys: |
-            dependency-check-nvd-${{ runner.os }}-
+          java-version: ${{ steps.profile.outputs.java_version }}
+          cache: ${{ steps.profile.outputs.build_system }}
+          cache-dependency-path: ${{ steps.profile.outputs.build_file }}
+      - name: Generar SBOM Maven
+        if: steps.profile.outputs.build_system == 'maven'
+        working-directory: ${{ steps.profile.outputs.project_root }}
+        run: |
+          MAVEN_COMMAND=mvn
+          if [ -x ./mvnw ]; then MAVEN_COMMAND=./mvnw; fi
+          "$MAVEN_COMMAND" --batch-mode --no-transfer-progress \
+            org.cyclonedx:cyclonedx-maven-plugin:2.9.2:makeAggregateBom \
+            -DskipTests -DoutputFormat=json -DoutputName=bom \
+            -DoutputReactorProjects=false
+          test -s target/bom.json
+          mkdir -p "$GITHUB_WORKSPACE/reports/sbom"
+          cp target/bom.json "$GITHUB_WORKSPACE/reports/sbom/bom.json"
+      - name: Generar SBOM Gradle sin modificar el proyecto
+        if: steps.profile.outputs.build_system == 'gradle'
+        working-directory: ${{ steps.profile.outputs.project_root }}
+        shell: bash
+        env:
+          CYCLONEDX_GRADLE_PLUGIN_VERSION: ${{ steps.profile.outputs.cyclonedx_gradle_version }}
+        run: |
+          GRADLE_COMMAND=gradle
+          if [ -x ./gradlew ]; then GRADLE_COMMAND=./gradlew; fi
+          "$GRADLE_COMMAND" --no-daemon \
+            --init-script "$GITHUB_WORKSPACE/.security-engine/security/cyclonedx-init.gradle.kts" \
+            cyclonedxBom
+          BOM="$(find build/reports -name bom.json -print -quit)"
+          test -n "$BOM" && test -s "$BOM"
+          mkdir -p "$GITHUB_WORKSPACE/reports/sbom"
+          cp "$BOM" "$GITHUB_WORKSPACE/reports/sbom/bom.json"
       - name: Analizar dependencias reales
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
-          NVD_ARGS=(-DnvdApiDelay=6000 -DnvdMaxRetryCount=20 -DnvdValidForHours=24)
-          if [ -n "$NVD_API_KEY" ]; then NVD_ARGS+=(-DnvdApiKey="$NVD_API_KEY"); fi
-          mvn --batch-mode --no-transfer-progress package -DskipTests \
-            org.owasp:dependency-check-maven:check "${NVD_ARGS[@]}"
-          mkdir -p reports/sca
-          cp target/dependency-check/dependency-check-report.* reports/sca/ 2>/dev/null || true
-          test -s reports/sca/dependency-check-report.json
+          mkdir -p reports/sca "${{ runner.temp }}/trivy-cache"
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -v "${{ github.workspace }}/reports/sca:/reports" \
+            -v "${{ runner.temp }}/trivy-cache:/root/.cache/trivy" \
+            aquasec/trivy:0.65.0 \
+            sbom \
+            --scanners vuln \
+            --skip-version-check \
+            --format json \
+            --output /reports/trivy-sca.json \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --ignore-unfixed=false \
+            --exit-code 0 \
+            /workspace/reports/sbom/bom.json
+          test -s reports/sca/trivy-sca.json
       - name: Validar fixture SCA
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
-          NVD_ARGS=(-DnvdApiDelay=6000 -DnvdMaxRetryCount=20 -DnvdValidForHours=24)
-          if [ -n "$NVD_API_KEY" ]; then NVD_ARGS+=(-DnvdApiKey="$NVD_API_KEY"); fi
           mkdir -p reports/demo/sca
-          mvn --batch-mode --no-transfer-progress -f security-fixtures/sca/pom.xml \
-            org.owasp:dependency-check-maven:12.2.2:check \
-            -Dformat=JSON -DoutputDirectory="${PWD}/reports/demo/sca" \
-            -DfailBuildOnCVSS=11 "${NVD_ARGS[@]}"
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -v "${{ github.workspace }}/reports/demo/sca:/reports" \
+            -v "${{ runner.temp }}/trivy-cache:/root/.cache/trivy" \
+            aquasec/trivy:0.65.0 \
+            fs --scanners vuln --skip-version-check --format json \
+            --output /reports/trivy-sca-fixture.json \
+            --exit-code 0 /workspace/.security-engine/security-fixtures/sca/pom.xml
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("reports/demo/sca/trivy-sca-fixture.json").read_text(encoding="utf-8"))
+          vulnerabilities = [
+              vulnerability
+              for result in report.get("Results", [])
+              for vulnerability in (result.get("Vulnerabilities") or [])
+          ]
+          if not vulnerabilities:
+              raise SystemExit("Trivy SCA no detecto la dependencia vulnerable del fixture.")
+          print(f"Fixtures SCA detectados: {len(vulnerabilities)}")
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: movie-sca
+          name: spring-boot-sca
           path: |
             reports/sca/
             reports/demo/sca/
@@ -104,9 +232,30 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: docker build --tag movie-review:${{ github.sha }} .
+      - name: Obtener nucleo generico
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ inputs.engine_repository || github.repository }}
+          ref: ${{ inputs.engine_ref || (inputs.engine_repository == '' && github.sha) || 'main' }}
+          path: .security-engine
+          persist-credentials: false
+      - name: Detectar proyecto Spring Boot
+        id: profile
+        run: |
+          python .security-engine/scripts/project_profile.py \
+            --project-path "${{ inputs.project_path || 'auto' }}" \
+            --dockerfile "${{ inputs.dockerfile || 'auto' }}" \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Construir imagen
+        if: steps.profile.outputs.container_scan == 'true'
+        run: |
+          docker build \
+            --file "${{ steps.profile.outputs.dockerfile }}" \
+            --tag "${{ steps.profile.outputs.image_tag }}" \
+            "${{ steps.profile.outputs.docker_context }}"
       - run: mkdir -p reports/container
       - name: Analizar imagen con Trivy
+        if: steps.profile.outputs.container_scan == 'true'
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -118,12 +267,18 @@ jobs:
             --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
             --ignore-unfixed=false \
             --exit-code 0 \
-            movie-review:${{ github.sha }}
+            "${{ steps.profile.outputs.image_tag }}"
           test -s reports/container/trivy.json
+      - name: Marcar analisis de contenedor como no aplicable
+        if: steps.profile.outputs.container_scan != 'true'
+        run: |
+          printf '{"SchemaVersion": 2, "Results": []}\n' > reports/container/trivy.json
+          printf '{"status":"NOT_APPLICABLE","reason":"No se ha encontrado un Dockerfile unico."}\n' \
+            > reports/container/status.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: movie-container
+          name: spring-boot-container
           path: reports/container/
           retention-days: 30
 
@@ -133,27 +288,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Obtener nucleo generico
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ inputs.engine_repository || github.repository }}
+          ref: ${{ inputs.engine_ref || (inputs.engine_repository == '' && github.sha) || 'main' }}
+          path: .security-engine
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         continue-on-error: true
         with:
-          pattern: movie-*
+          pattern: spring-boot-*
           path: downloaded
       - name: Reunir resultados reales
         shell: bash
         run: |
           mkdir -p reports/{sast,sca,container}
-          find downloaded/movie-sast -name semgrep.json \
+          find downloaded/spring-boot-sast -name semgrep.json \
             -exec cp {} reports/sast/semgrep.json \; 2>/dev/null || true
-          find downloaded/movie-sca -name dependency-check-report.json \
-            -exec cp {} reports/sca/dependency-check-report.json \; 2>/dev/null || true
-          find downloaded/movie-container -name trivy.json \
+          find downloaded/spring-boot-sca -name trivy-sca.json \
+            -exec cp {} reports/sca/trivy-sca.json \; 2>/dev/null || true
+          find downloaded/spring-boot-container -name trivy.json \
             -exec cp {} reports/container/trivy.json \; 2>/dev/null || true
-      - name: Normalizar y evaluar
+          find downloaded/spring-boot-container -name status.json \
+            -exec cp {} reports/container/status.json \; 2>/dev/null || true
+          find downloaded/spring-boot-sast -name project-profile.json \
+            -exec cp {} reports/project-profile.json \; 2>/dev/null || true
+      - name: Validar y normalizar informes
         run: |
-          python scripts/validate_reports.py
-          python scripts/normalize_findings.py --commit "${{ github.sha }}"
-          python scripts/mock_remediation.py
-          python scripts/evaluate_policy.py --enforce
+          python .security-engine/scripts/validate_reports.py
+          python .security-engine/scripts/normalize_findings.py --commit "${{ github.sha }}"
+          python .security-engine/scripts/mock_remediation.py
+      - name: Evaluar politica de seguridad
+        run: python .security-engine/scripts/evaluate_policy.py --policy .security-engine/security/policy.json
       - name: Publicar resumen visual de seguridad
         if: always()
         shell: bash
@@ -176,6 +343,7 @@ jobs:
 
           summary = findings_data.get("summary", {})
           counts = summary.get("bySeverity", {})
+          unique_counts = summary.get("uniqueBySeverity", {})
           findings = findings_data.get("findings", [])
           status = decision_data.get("status", "UNKNOWN")
           analyzer_results = {
@@ -201,11 +369,14 @@ jobs:
               "",
               f"### {status_icon} Estado de seguridad: **{status}**",
               "",
-              "| Severidad | Hallazgos |",
-              "|---|---:|",
+              "| Severidad | Instancias | Problemas únicos |",
+              "|---|---:|---:|",
           ]
-          for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
-              lines.append(f"| `{severity}` | {counts.get(severity, 0)} |")
+          for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO", "UNKNOWN"):
+              lines.append(
+                  f"| `{severity}` | {counts.get(severity, 0)} | "
+                  f"{unique_counts.get(severity, 0)} |"
+              )
 
           lines.extend([
               "",
@@ -238,7 +409,14 @@ jobs:
                   "|---|---|---|---|---|---|",
               ])
               for finding in findings:
-                  location = finding.get("file") or finding.get("component") or "No disponible"
+                  component = finding.get("component")
+                  version = finding.get("version")
+                  if component:
+                      location = f"{component} · {version}" if version else component
+                  else:
+                      location = finding.get("file") or "No disponible"
+                      if finding.get("line"):
+                          location = f"{location}:{finding['line']}"
                   lines.append(
                       f"| `{cell(finding.get('id'))}` | {cell(finding.get('tool'))} | "
                       f"{cell(finding.get('category'))} | `{cell(finding.get('severity'))}` | "
@@ -253,14 +431,58 @@ jobs:
           ])
           Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
-      - name: Bloquear si falla un analizador
-        if: always() && (needs.sast.result != 'success' || needs.sca.result != 'success' || needs.container.result != 'success')
-        run: |
-          echo "No se permite aprobar el despliegue: al menos un analizador no terminó correctamente."
-          exit 1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: movie-security-report-${{ github.sha }}
+          name: spring-boot-security-report-${{ github.sha }}
           path: reports/
           retention-days: 30
+      - name: Aplicar puerta de seguridad para el despliegue
+        if: always()
+        shell: bash
+        env:
+          SAST_RESULT: ${{ needs.sast.result }}
+          SCA_RESULT: ${{ needs.sca.result }}
+          CONTAINER_RESULT: ${{ needs.container.result }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          analyzer_path = Path("reports/normalized/analyzer-status.json")
+          decision_path = Path("reports/normalized/decision.json")
+          analyzer = json.loads(analyzer_path.read_text(encoding="utf-8")) if analyzer_path.exists() else {}
+          decision = json.loads(decision_path.read_text(encoding="utf-8")) if decision_path.exists() else {}
+          jobs = {
+              "SAST": os.environ.get("SAST_RESULT"),
+              "SCA": os.environ.get("SCA_RESULT"),
+              "Contenedor": os.environ.get("CONTAINER_RESULT"),
+          }
+          failed_jobs = [name for name, result in jobs.items() if result != "success"]
+
+          if failed_jobs or analyzer.get("status") != "SUCCESS":
+              details = ", ".join(failed_jobs) or "; ".join(analyzer.get("errors", []))
+              print(f"::error title=Error tecnico del analisis::{details}")
+              print("Despliegue impedido porque el analisis no termino correctamente.")
+              sys.exit(3)
+
+          status = decision.get("status", "UNKNOWN")
+          if status == "BLOCKED":
+              identifiers = decision.get("blockingFindingIds", [])
+              detail = ", ".join(identifiers) if identifiers else "sin identificadores disponibles"
+              print(f"::error title=Despliegue bloqueado por la politica::{len(identifiers)} vulnerabilidades criticas: {detail}")
+              print("Los analizadores funcionaron correctamente, pero la politica impide desplegar este commit.")
+              sys.exit(2)
+          if status == "ANALYSIS_ERROR":
+              print("::error title=Error tecnico del analisis::La decision de seguridad es ANALYSIS_ERROR.")
+              sys.exit(3)
+          if status == "REVIEW_REQUIRED":
+              print("::warning title=Revision de seguridad requerida::Hay vulnerabilidades altas que requieren revision.")
+          elif status != "APPROVED":
+              print(f"::error title=Decision de seguridad desconocida::Estado recibido: {status}")
+              sys.exit(3)
+          else:
+              print("Puerta de seguridad superada: el commit puede desplegarse.")
+          PY

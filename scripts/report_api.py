@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import difflib
+import mimetypes
 import os
 import re
 import subprocess
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,9 +19,16 @@ from typing import Any
 
 
 REPORT_ROOT = Path(os.getenv("REPORT_ROOT", "/workspace/reports"))
+SOURCE_ROOT = Path(os.getenv("SOURCE_ROOT", "/workspace/source"))
+AI_REMEDIATION_ENABLED = os.getenv(
+    "AI_REMEDIATION_ENABLED", "false"
+).lower() == "true"
+DASHBOARD_ROOT = Path(
+    os.getenv("DASHBOARD_ROOT", "/usr/local/share/security-dashboard")
+)
 AI_API_URL = os.getenv(
     "AI_API_URL",
-    "https://ai-api.cgarcher.dev/api/v1/remediations",
+    "",
 )
 AI_API_TOKEN_FILE = Path(
     os.getenv("AI_API_TOKEN_FILE", "/run/secrets/ai_api_token")
@@ -28,10 +38,22 @@ MAX_REQUEST_SIZE = 1024
 UPDATE_LOCK = threading.Lock()
 REMEDIATION_LOCK = threading.Lock()
 LATEST_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+MAX_SOURCE_CONTEXT = 8000
 
 
 class RequestError(Exception):
     """Error controlado que puede mostrarse al usuario del dashboard."""
+
+
+def download_report() -> subprocess.CompletedProcess[str]:
+    """Descarga el último informe mediante el cliente de GitHub incluido."""
+    return subprocess.run(
+        ["/usr/local/bin/security-report"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -79,11 +101,88 @@ def selected_finding(
     return finding, run_directory
 
 
-def remediation_payload(finding: dict[str, Any]) -> dict[str, Any]:
+def source_file_for_finding(finding: dict[str, Any], source_root: Path) -> Path | None:
+    """Localiza un fichero relevante sin asumir Maven ni una ruta concreta."""
+    category = str(finding.get("category", "")).upper()
+    root = source_root.resolve()
+
+    def unique_file(names: tuple[str, ...]) -> Path | None:
+        direct = [root / name for name in names if (root / name).is_file()]
+        if len(direct) == 1:
+            return direct[0]
+        found = sorted(
+            path
+            for name in names
+            for path in root.rglob(name)
+            if not any(
+                part in {".git", "build", "reports", "target"}
+                for part in path.parts
+            )
+        )
+        return found[0] if len(found) == 1 else None
+
+    if category == "SCA":
+        candidate = unique_file(("pom.xml", "build.gradle", "build.gradle.kts"))
+    elif category == "CONTAINER":
+        is_maven_dependency = (
+            finding.get("packageType") == "jar"
+            or ":" in str(finding.get("component") or "")
+        )
+        candidate = (
+            unique_file(("pom.xml", "build.gradle", "build.gradle.kts"))
+            if is_maven_dependency
+            else unique_file(("Dockerfile",))
+        )
+    elif category == "SAST":
+        file_value = str(finding.get("file") or "").replace("\\", "/")
+        relative_path = Path(file_value)
+        if relative_path.is_absolute() or relative_path.suffix not in {".java", ".kt"}:
+            return None
+        candidate = (root / relative_path).resolve()
+    else:
+        return None
+
+    if candidate is None:
+        return None
+    candidate = candidate.resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def source_context(finding: dict[str, Any], source_root: Path) -> tuple[str | None, str | None]:
+    """Lee el fichero afectado sin permitir acceso al resto del equipo."""
+    source_file = source_file_for_finding(finding, source_root)
+    if source_file is None:
+        return None, None
+
+    try:
+        content = source_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None, None
+
+    line = finding.get("line")
+    if isinstance(line, int) and line > 0:
+        lines = content.splitlines()
+        first = max(0, line - 5)
+        last = min(len(lines), line + 4)
+        content = "\n".join(lines[first:last])
+
+    relative_path = source_file.relative_to(source_root.resolve()).as_posix()
+    return relative_path, content[:MAX_SOURCE_CONTEXT]
+
+
+def remediation_payload(
+    finding: dict[str, Any],
+    source_root: Path = SOURCE_ROOT,
+) -> dict[str, Any]:
     description = finding.get("description")
     if not isinstance(description, str) or not description.strip():
         description = "El analizador no proporcionó una descripción del hallazgo."
 
+    affected_file, context = source_context(finding, source_root)
     return {
         "id": str(finding.get("id", "")),
         "severity": str(finding.get("severity", "UNKNOWN")),
@@ -91,11 +190,19 @@ def remediation_payload(finding: dict[str, Any]) -> dict[str, Any]:
         "category": str(finding.get("category", "OTHER")),
         "component": finding.get("component") or finding.get("file"),
         "description": description,
+        "currentVersion": finding.get("version"),
         "fixedVersion": finding.get("fixedVersion"),
+        "affectedFile": affected_file,
+        "line": finding.get("line"),
+        "sourceContext": context,
     }
 
 
 def read_ai_token(token_file: Path = AI_API_TOKEN_FILE) -> str:
+    token = os.getenv("AI_API_TOKEN", "").strip()
+    if token:
+        return token
+
     try:
         token = token_file.read_text(encoding="utf-8").strip()
     except OSError as error:
@@ -115,7 +222,7 @@ def call_ai_api(payload: dict[str, Any]) -> dict[str, Any]:
         headers={
             "Authorization": f"Bearer {read_ai_token()}",
             "Content-Type": "application/json",
-            "User-Agent": "movie-review-report-updater/1.0",
+            "User-Agent": "spring-boot-security-dashboard/1.0",
         },
         method="POST",
     )
@@ -146,7 +253,100 @@ def call_ai_api(payload: dict[str, Any]) -> dict[str, Any]:
         raise RequestError("La respuesta de la API de IA está incompleta.")
     if result["findingId"] != payload["id"]:
         raise RequestError("La respuesta de la API de IA no corresponde al hallazgo.")
+
+    patch = result.get("patchProposal")
+    if isinstance(patch, dict) and patch.get("available") is True:
+        if not payload.get("affectedFile") or patch.get("file") != payload["affectedFile"]:
+            raise RequestError("El parche no corresponde al fichero analizado.")
+        content = patch.get("content")
+        if not isinstance(content, str) or "--- " not in content or "+++ " not in content:
+            raise RequestError("La propuesta no contiene una diferencia válida.")
     return result
+
+
+def local_patch_proposal(
+    result: dict[str, Any],
+    finding: dict[str, Any],
+    source_root: Path = SOURCE_ROOT,
+) -> dict[str, Any]:
+    """Completa una propuesta ausente utilizando el fichero real como base."""
+    current_patch = result.get("patchProposal")
+    if isinstance(current_patch, dict) and current_patch.get("available") is True:
+        return result
+
+    source_file = source_file_for_finding(finding, source_root)
+    fixed_version = str(finding.get("fixedVersion") or "").split(",")[0].strip()
+    if source_file is None or not fixed_version:
+        return result
+    try:
+        original = source_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return result
+
+    updated = original
+    current_version = str(finding.get("version") or "").strip()
+    component = str(finding.get("component") or "")
+    suffix = source_file.name.lower()
+
+    if current_version and current_version in original:
+        updated = original.replace(current_version, fixed_version, 1)
+    elif suffix == "pom.xml":
+        artifact = component.split(":")[-1].lower()
+        if "tomcat" in artifact:
+            property_name = "tomcat.version"
+        elif component.startswith("org.springframework:"):
+            property_name = "spring-framework.version"
+        else:
+            property_name = ""
+        if property_name and f"<{property_name}>" not in original:
+            property_line = f"        <{property_name}>{fixed_version}</{property_name}>\n"
+            if "</properties>" in original:
+                updated = original.replace(
+                    "    </properties>", property_line + "    </properties>", 1
+                )
+    elif suffix in {"build.gradle", "build.gradle.kts"}:
+        # Para Gradle solo se automatiza una sustitucion existente. Declarar
+        # una restriccion nueva sin conocer el DSL y los plugins seria ambiguo.
+        updated = original
+    elif source_file.name == "Dockerfile" and re.fullmatch(r"[A-Za-z0-9+_.-]+", component):
+        lines = original.splitlines(keepends=True)
+        final_from = max(
+            (index for index, line in enumerate(lines) if line.lstrip().upper().startswith("FROM ")),
+            default=-1,
+        )
+        for index in range(final_from + 1, len(lines)):
+            line = lines[index]
+            if line.lstrip().upper().startswith("RUN ") and (
+                "apk " in original.lower() or "alpine" in original.lower()
+            ):
+                command = line.rstrip("\r\n")
+                newline = "\r\n" if line.endswith("\r\n") else "\n"
+                lines[index] = (
+                    command.replace("RUN ", f"RUN apk add --no-cache '{component}>={fixed_version}' && ", 1)
+                    + newline
+                )
+                updated = "".join(lines)
+                break
+
+    if updated == original:
+        return result
+
+    relative = source_file.relative_to(source_root.resolve()).as_posix()
+    patch = "".join(difflib.unified_diff(
+        original.splitlines(keepends=True),
+        updated.splitlines(keepends=True),
+        fromfile=relative,
+        tofile=relative,
+        n=3,
+    ))
+    enriched = dict(result)
+    enriched["patchProposal"] = {
+        "available": True,
+        "file": relative,
+        "content": patch,
+        "generatedFromSource": True,
+    }
+    return enriched
 
 
 def remediation_markdown(result: dict[str, Any]) -> str:
@@ -187,10 +387,44 @@ def save_remediation(result: dict[str, Any], run_directory: Path) -> None:
 
 
 class ReportHandler(BaseHTTPRequestHandler):
+    def end_headers(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; connect-src 'self'; style-src 'self'; "
+            "script-src 'self'; img-src 'self'; object-src 'none'; "
+            "base-uri 'none'; frame-ancestors 'none'",
+        )
+        super().end_headers()
+
     def send_json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_file(self, root: Path, relative_path: str) -> None:
+        root = root.resolve()
+        candidate = (root / relative_path).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            self.send_json(404, {"error": "Fichero no encontrado."})
+            return
+
+        if not candidate.is_file():
+            self.send_json(404, {"error": "Fichero no encontrado."})
+            return
+
+        body = candidate.read_bytes()
+        content_type = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -212,8 +446,24 @@ class ReportHandler(BaseHTTPRequestHandler):
         return document
 
     def do_GET(self) -> None:
-        if self.path == "/health":
+        path = urllib.parse.unquote(urllib.parse.urlparse(self.path).path)
+        if path == "/health":
             self.send_json(200, {"status": "ok"})
+            return
+        if path == "/api/config":
+            self.send_json(200, {"remediationEnabled": AI_REMEDIATION_ENABLED})
+            return
+        if path.startswith("/reports/"):
+            self.send_file(REPORT_ROOT, path.removeprefix("/reports/"))
+            return
+        static_files = {
+            "/": "index.html",
+            "/index.html": "index.html",
+            "/app.js": "app.js",
+            "/styles.css": "styles.css",
+        }
+        if path in static_files:
+            self.send_file(DASHBOARD_ROOT, static_files[path])
             return
         self.send_json(404, {"error": "Ruta no encontrada."})
 
@@ -222,10 +472,10 @@ class ReportHandler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": "Petición no autorizada."})
             return
 
-        if self.path == "/update":
+        if self.path == "/api/update":
             self.update_report()
             return
-        if self.path == "/remediation":
+        if self.path == "/api/remediation":
             self.create_remediation()
             return
         self.send_json(404, {"error": "Ruta no encontrada."})
@@ -236,13 +486,7 @@ class ReportHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            result = subprocess.run(
-                ["/usr/local/bin/security-report"],
-                capture_output=True,
-                text=True,
-                timeout=180,
-                check=False,
-            )
+            result = download_report()
         except subprocess.TimeoutExpired:
             self.send_json(504, {"error": "La descarga ha superado el tiempo máximo."})
             return
@@ -251,9 +495,17 @@ class ReportHandler(BaseHTTPRequestHandler):
 
         output = (result.stdout + result.stderr).strip()
         if result.returncode != 0:
+            error_message = "No se ha podido actualizar el informe."
+            if "no se ha encontrado ninguna ejecucion terminada" in output.lower():
+                branch = os.getenv("GITHUB_BRANCH", "").strip()
+                error_message = (
+                    f"Todavia no existe un analisis terminado para la rama {branch}."
+                    if branch
+                    else "Todavia no existe ningun analisis terminado."
+                )
             self.send_json(
-                502,
-                {"error": "No se ha podido actualizar el informe.", "detail": output},
+                404 if "ninguna ejecucion terminada" in output.lower() else 502,
+                {"error": error_message, "detail": output},
             )
             return
         self.send_json(
@@ -262,6 +514,10 @@ class ReportHandler(BaseHTTPRequestHandler):
         )
 
     def create_remediation(self) -> None:
+        if not AI_REMEDIATION_ENABLED:
+            self.send_json(403, {"error": "La remediación solo está disponible en local."})
+            return
+
         if not REMEDIATION_LOCK.acquire(blocking=False):
             self.send_json(409, {"error": "Ya hay una remediación en curso."})
             return
@@ -275,6 +531,7 @@ class ReportHandler(BaseHTTPRequestHandler):
 
             finding, run_directory = selected_finding(finding_index, finding_id)
             result = call_ai_api(remediation_payload(finding))
+            result = local_patch_proposal(result, finding)
             save_remediation(result, run_directory)
         except RequestError as error:
             self.send_json(400, {"error": str(error)})
@@ -289,6 +546,17 @@ class ReportHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    REPORT_ROOT.mkdir(parents=True, exist_ok=True)
+    try:
+        initial_download = download_report()
+        initial_output = (initial_download.stdout + initial_download.stderr).strip()
+        if initial_download.returncode == 0:
+            print("Informe inicial descargado correctamente.", flush=True)
+        else:
+            print(f"No se ha podido descargar el informe inicial: {initial_output}", flush=True)
+    except subprocess.TimeoutExpired:
+        print("La descarga inicial ha superado el tiempo máximo.", flush=True)
+
     server = ThreadingHTTPServer(("0.0.0.0", 8080), ReportHandler)
-    print("API local del dashboard disponible en el puerto 8080.", flush=True)
+    print("Security Dashboard disponible en el puerto 8080.", flush=True)
     server.serve_forever()

@@ -19,7 +19,6 @@
 
     <properties>
         <java.version>17</java.version>
-        <dependency-check.version>12.2.2</dependency-check.version>
     </properties>
 
     <dependencies>
@@ -61,16 +60,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.owasp</groupId>
-                <artifactId>dependency-check-maven</artifactId>
-                <version>${dependency-check.version}</version>
-                <configuration>
-                    <format>ALL</format>
-                    <outputDirectory>${project.build.directory}/dependency-check</outputDirectory>
-                    <failBuildOnCVSS>11</failBuildOnCVSS>
-                </configuration>
             </plugin>
         </plugins>
     </build>
