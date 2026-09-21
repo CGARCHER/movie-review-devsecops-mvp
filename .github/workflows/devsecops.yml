@@ -1,0 +1,392 @@
+# Paquete DevSecOps: 0.9.4
+name: Seguridad DevSecOps
+
+on:
+  push:
+    branches: [develop, main, 'feature/**']
+  pull_request:
+  schedule:
+    # Repite el análisis cada lunes aunque el proyecto no reciba nuevos commits.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+env:
+  DEVSECOPS_VERSION: 0.9.4
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devsecops-security-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sast:
+    name: security / sast
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.13"
+      - name: Detectar el proyecto con el perfil Spring Boot
+        id: profile
+        run: |
+          python .devsecops/engine/profiles/spring_boot/project_profile.py \
+            --project-path "auto" \
+            --dockerfile "auto" \
+            --github-output "$GITHUB_OUTPUT"
+      - run: pip install --disable-pip-version-check semgrep==1.170.0
+      - name: Analizar codigo real
+        run: |
+          mkdir -p reports/sast
+          semgrep scan --config .devsecops/engine/security/semgrep.yml --json \
+            --output reports/sast/semgrep.json \
+            --exclude .devsecops \
+            --exclude target --exclude build --exclude reports \
+            ${{ steps.profile.outputs.project_root }}
+          test -s reports/sast/semgrep.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: devsecops-sast
+          path: |
+            reports/sast/
+            reports/demo/sast/
+            reports/project-profile.json
+          retention-days: 30
+
+  sca:
+    name: security / sca
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Detectar el proyecto con el perfil Spring Boot
+        id: profile
+        run: |
+          python .devsecops/engine/profiles/spring_boot/project_profile.py \
+            --project-path "auto" \
+            --dockerfile "auto" \
+            --github-output "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: ${{ steps.profile.outputs.java_version }}
+          cache: ${{ steps.profile.outputs.build_system }}
+          cache-dependency-path: ${{ steps.profile.outputs.build_file }}
+      - name: Generar SBOM Maven
+        if: steps.profile.outputs.build_system == 'maven'
+        working-directory: ${{ steps.profile.outputs.project_root }}
+        run: |
+          MAVEN_COMMAND=mvn
+          if [ -x ./mvnw ]; then MAVEN_COMMAND=./mvnw; fi
+          "$MAVEN_COMMAND" --batch-mode --no-transfer-progress \
+            org.cyclonedx:cyclonedx-maven-plugin:2.9.2:makeAggregateBom \
+            -DskipTests -DoutputFormat=json -DoutputName=bom \
+            -DoutputReactorProjects=false
+          test -s target/bom.json
+          mkdir -p "$GITHUB_WORKSPACE/reports/sbom"
+          cp target/bom.json "$GITHUB_WORKSPACE/reports/sbom/bom.json"
+      - name: Generar SBOM Gradle sin modificar el proyecto
+        if: steps.profile.outputs.build_system == 'gradle'
+        working-directory: ${{ steps.profile.outputs.project_root }}
+        shell: bash
+        env:
+          CYCLONEDX_GRADLE_PLUGIN_VERSION: ${{ steps.profile.outputs.cyclonedx_gradle_version }}
+        run: |
+          GRADLE_COMMAND=gradle
+          if [ -x ./gradlew ]; then GRADLE_COMMAND=./gradlew; fi
+          "$GRADLE_COMMAND" --no-daemon \
+            --init-script "$GITHUB_WORKSPACE/.devsecops/engine/security/cyclonedx-init.gradle.kts" \
+            cyclonedxBom
+          BOM="$(find build/reports -name bom.json -print -quit)"
+          test -n "$BOM" && test -s "$BOM"
+          mkdir -p "$GITHUB_WORKSPACE/reports/sbom"
+          cp "$BOM" "$GITHUB_WORKSPACE/reports/sbom/bom.json"
+      - name: Analizar dependencias reales
+        run: |
+          mkdir -p reports/sca "${{ runner.temp }}/trivy-cache"
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -v "${{ github.workspace }}/reports/sca:/reports" \
+            -v "${{ runner.temp }}/trivy-cache:/root/.cache/trivy" \
+            aquasec/trivy:0.65.0 \
+            sbom \
+            --scanners vuln \
+            --skip-version-check \
+            --format json \
+            --output /reports/trivy-sca.json \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --ignore-unfixed=false \
+            --exit-code 0 \
+            /workspace/reports/sbom/bom.json
+          test -s reports/sca/trivy-sca.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: devsecops-sca
+          path: |
+            reports/sca/
+            reports/demo/sca/
+          if-no-files-found: warn
+          retention-days: 30
+
+  container:
+    name: security / container
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Detectar el proyecto con el perfil Spring Boot
+        id: profile
+        run: |
+          python .devsecops/engine/profiles/spring_boot/project_profile.py \
+            --project-path "auto" \
+            --dockerfile "auto" \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Construir imagen
+        if: steps.profile.outputs.container_scan == 'true'
+        run: |
+          docker build \
+            --file "${{ steps.profile.outputs.dockerfile }}" \
+            --tag "${{ steps.profile.outputs.image_tag }}" \
+            "${{ steps.profile.outputs.docker_context }}"
+      - run: mkdir -p reports/container
+      - name: Analizar imagen con Trivy
+        if: steps.profile.outputs.container_scan == 'true'
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${{ github.workspace }}/reports/container:/reports" \
+            aquasec/trivy:0.65.0 \
+            image \
+            --format json \
+            --output /reports/trivy.json \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --ignore-unfixed=false \
+            --exit-code 0 \
+            "${{ steps.profile.outputs.image_tag }}"
+          test -s reports/container/trivy.json
+      - name: Marcar analisis de contenedor como no aplicable
+        if: steps.profile.outputs.container_scan != 'true'
+        run: |
+          printf '{"SchemaVersion": 2, "Results": []}\n' > reports/container/trivy.json
+          printf '{"status":"NOT_APPLICABLE","reason":"No se ha encontrado un Dockerfile en el proyecto."}\n' \
+            > reports/container/status.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: devsecops-container
+          path: reports/container/
+          retention-days: 30
+
+  aggregate:
+    name: security / aggregate
+    if: always()
+    needs: [sast, sca, container]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        continue-on-error: true
+        with:
+          pattern: devsecops-*
+          path: downloaded
+      - name: Reunir resultados reales
+        shell: bash
+        run: |
+          mkdir -p reports/{sast,sca,container}
+          find downloaded/devsecops-sast -name semgrep.json \
+            -exec cp {} reports/sast/semgrep.json \; 2>/dev/null || true
+          find downloaded/devsecops-sca -name trivy-sca.json \
+            -exec cp {} reports/sca/trivy-sca.json \; 2>/dev/null || true
+          find downloaded/devsecops-container -name trivy.json \
+            -exec cp {} reports/container/trivy.json \; 2>/dev/null || true
+          find downloaded/devsecops-container -name status.json \
+            -exec cp {} reports/container/status.json \; 2>/dev/null || true
+          find downloaded/devsecops-sast -name project-profile.json \
+            -exec cp {} reports/project-profile.json \; 2>/dev/null || true
+      - name: Validar y normalizar informes
+        run: |
+          python .devsecops/engine/scripts/validate_reports.py
+          python .devsecops/engine/scripts/normalize_findings.py --commit "${{ github.sha }}"
+          python .devsecops/engine/scripts/mock_remediation.py
+      - name: Evaluar politica de seguridad
+        run: python .devsecops/engine/scripts/evaluate_policy.py --policy .devsecops/engine/security/policy.json
+      - name: Publicar resumen visual de seguridad
+        if: always()
+        shell: bash
+        env:
+          SAST_RESULT: ${{ needs.sast.result }}
+          SCA_RESULT: ${{ needs.sca.result }}
+          CONTAINER_RESULT: ${{ needs.container.result }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          findings_path = Path("reports/normalized/findings.json")
+          decision_path = Path("reports/normalized/decision.json")
+          analyzer_path = Path("reports/normalized/analyzer-status.json")
+          findings_data = json.loads(findings_path.read_text(encoding="utf-8")) if findings_path.exists() else {}
+          decision_data = json.loads(decision_path.read_text(encoding="utf-8")) if decision_path.exists() else {}
+          analyzer_data = json.loads(analyzer_path.read_text(encoding="utf-8")) if analyzer_path.exists() else {}
+
+          summary = findings_data.get("summary", {})
+          counts = summary.get("bySeverity", {})
+          unique_counts = summary.get("uniqueBySeverity", {})
+          findings = findings_data.get("findings", [])
+          status = decision_data.get("status", "UNKNOWN")
+          job_results = {
+              "SAST": os.environ.get("SAST_RESULT", "unknown"),
+              "SCA": os.environ.get("SCA_RESULT", "unknown"),
+              "Container": os.environ.get("CONTAINER_RESULT", "unknown"),
+          }
+          analyzers = analyzer_data.get("analyzers", {})
+          analyzer_results = {
+              "SAST": analyzers.get("sast", {}).get("status", job_results["SAST"].upper()),
+              "SCA": analyzers.get("sca", {}).get("status", job_results["SCA"].upper()),
+              "Container": analyzers.get("container", {}).get("status", job_results["Container"].upper()),
+          }
+          technical_failure = any(result != "success" for result in job_results.values())
+          if technical_failure or analyzer_data.get("status") != "SUCCESS":
+              status = "ANALYSIS_ERROR"
+          status_icon = {
+              "APPROVED": "✅",
+              "REVIEW_REQUIRED": "⚠️",
+              "BLOCKED": "❌",
+              "ANALYSIS_ERROR": "❌",
+          }.get(status, "❔")
+
+          def cell(value):
+              return str(value or "No disponible").replace("|", "\\|").replace("\n", " ")
+
+          lines = [
+              "## Resumen de seguridad",
+              "",
+              f"**Versión del paquete DevSecOps:** `{os.environ.get('DEVSECOPS_VERSION', 'desconocida')}`",
+              "",
+              f"### {status_icon} Estado de seguridad: **{status}**",
+              "",
+              "| Severidad | Instancias | Problemas únicos |",
+              "|---|---:|---:|",
+          ]
+          for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO", "UNKNOWN"):
+              lines.append(
+                  f"| `{severity}` | {counts.get(severity, 0)} | "
+                  f"{unique_counts.get(severity, 0)} |"
+              )
+
+          lines.extend([
+              "",
+              f"**Instancias detectadas:** {summary.get('total', len(findings))}",
+              "",
+              f"**Problemas únicos:** {summary.get('uniqueIssues', len(findings))}",
+              "",
+              f"**Componentes afectados:** {summary.get('affectedComponents', 0)}",
+              "",
+              "**Resultado de los analizadores:** " + ", ".join(
+                  f"{name}={result}" for name, result in analyzer_results.items()
+              ),
+              "",
+              "## Detalle de hallazgos",
+              "",
+          ])
+
+          container_analyzer = analyzers.get("container", {})
+          if analyzer_results["Container"] == "NOT_APPLICABLE":
+              lines.extend([
+                  f"**Motivo del análisis de contenedor:** {cell(container_analyzer.get('message'))}",
+                  "",
+              ])
+
+          analysis_errors = analyzer_data.get("errors", [])
+          if analysis_errors:
+              lines.extend([
+                  "## Errores del análisis",
+                  "",
+                  *[f"- {cell(error)}" for error in analysis_errors],
+                  "",
+              ])
+
+          if findings:
+              lines.extend([
+                  "| ID | Herramienta | Categoría | Severidad | Archivo o componente | Descripción |",
+                  "|---|---|---|---|---|---|",
+              ])
+              for finding in findings:
+                  component = finding.get("component")
+                  version = finding.get("version")
+                  if component:
+                      location = f"{component} · {version}" if version else component
+                  else:
+                      location = finding.get("file") or "No disponible"
+                      if finding.get("line"):
+                          location = f"{location}:{finding['line']}"
+                  lines.append(
+                      f"| `{cell(finding.get('id'))}` | {cell(finding.get('tool'))} | "
+                      f"{cell(finding.get('category'))} | `{cell(finding.get('severity'))}` | "
+                      f"{cell(location)} | {cell(finding.get('description'))} |"
+                  )
+          else:
+              lines.append("No se han encontrado hallazgos en los informes disponibles.")
+
+          lines.extend([
+              "",
+              f"Commit analizado: `{os.environ.get('GITHUB_SHA', 'local')}`",
+          ])
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: devsecops-security-report-${{ github.sha }}
+          path: reports/
+          retention-days: 30
+      - name: Comprobar validez del análisis
+        if: always()
+        shell: bash
+        env:
+          SAST_RESULT: ${{ needs.sast.result }}
+          SCA_RESULT: ${{ needs.sca.result }}
+          CONTAINER_RESULT: ${{ needs.container.result }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          analyzer_path = Path("reports/normalized/analyzer-status.json")
+          decision_path = Path("reports/normalized/decision.json")
+          analyzer = json.loads(analyzer_path.read_text(encoding="utf-8")) if analyzer_path.exists() else {}
+          decision = json.loads(decision_path.read_text(encoding="utf-8")) if decision_path.exists() else {}
+          jobs = {
+              "SAST": os.environ.get("SAST_RESULT"),
+              "SCA": os.environ.get("SCA_RESULT"),
+              "Contenedor": os.environ.get("CONTAINER_RESULT"),
+          }
+          failed_jobs = [name for name, result in jobs.items() if result != "success"]
+
+          if failed_jobs or analyzer.get("status") != "SUCCESS":
+              details = ", ".join(failed_jobs) or "; ".join(analyzer.get("errors", []))
+              print(f"::error title=Error tecnico del analisis::{details}")
+              print("Despliegue impedido porque el analisis no termino correctamente.")
+              sys.exit(3)
+
+          # Este check valida el análisis. La aceptación se comprueba antes de desplegar.
+          status = decision.get("status", "UNKNOWN")
+          if status == "ANALYSIS_ERROR":
+              print("::error title=Error tecnico del analisis::La decision de seguridad es ANALYSIS_ERROR.")
+              sys.exit(3)
+          if status in {"BLOCKED", "REVIEW_REQUIRED"}:
+              print("::warning title=Revision de seguridad requerida::Los hallazgos requieren corrección o aceptación explícita antes de desplegar main.")
+          elif status != "APPROVED":
+              print(f"::error title=Decision de seguridad desconocida::Estado recibido: {status}")
+              sys.exit(3)
+          else:
+              print("Análisis válido y política aprobada. El despliegue debe comprobar este mismo commit.")
+          PY

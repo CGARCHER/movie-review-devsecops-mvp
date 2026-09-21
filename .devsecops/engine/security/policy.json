@@ -1,0 +1,7 @@
+{
+  "blockOn": ["CRITICAL"],
+  "requireReviewOn": ["HIGH", "UNKNOWN"],
+  "allowOn": ["MEDIUM", "LOW", "INFO"],
+  "exceptionsRequireJustification": true,
+  "exceptionsRequireExpiration": true
+}

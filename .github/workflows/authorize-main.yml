@@ -1,0 +1,109 @@
+# El despliegue depende de este workflow y de su salida allowed.
+# No despliega ni necesita credenciales del proveedor.
+name: Autorizar despliegue de main
+
+on:
+  workflow_call:
+    outputs:
+      allowed:
+        description: Indica si puede continuar el despliegue
+        value: ${{ jobs.authorize.outputs.allowed }}
+      sha:
+        description: Commit que debe utilizar el despliegue
+        value: ${{ jobs.authorize.outputs.sha }}
+    inputs:
+      accept_risk:
+        description: Acepto los hallazgos del análisis
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  authorize:
+    outputs:
+      allowed: ${{ steps.authorization.outputs.allowed || steps.other-branch.outputs.allowed }}
+      sha: ${{ env.DEPLOY_SHA }}
+    env:
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      DEPLOY_REF: ${{ github.event_name == 'workflow_run' && 'refs/heads/main' || github.ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Identificar la rama
+        id: other-branch
+        if: env.DEPLOY_REF != 'refs/heads/main'
+        run: echo "allowed=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: env.DEPLOY_REF == 'refs/heads/main'
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+          persist-credentials: false
+      - name: Buscar el último análisis de main
+        id: security-run
+        if: env.DEPLOY_REF == 'refs/heads/main'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            // En workflow_run se despliega el commit analizado, no github.sha.
+            context.sha = process.env.DEPLOY_SHA || context.sha;
+            if (context.eventName === 'workflow_run') {
+              const trigger = context.payload.workflow_run;
+              if (trigger.head_branch !== 'main' || trigger.event !== 'push' ||
+                  trigger.conclusion !== 'success' || trigger.head_repository.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+                core.setFailed('El automático requiere un análisis válido de un push a main del propio repositorio.');
+                return;
+              }
+              const {data: main} = await github.rest.repos.getBranch({...context.repo, branch: 'main'});
+              if (main.commit.sha !== context.sha) {
+                core.setFailed('Main ha cambiado; se espera al análisis del nuevo commit.');
+                return;
+              }
+            }
+            const result = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'devsecops.yml',
+              head_sha: context.sha,
+              per_page: 10
+            });
+
+            const run = result.data.workflow_runs
+              .filter(item => item.head_branch === 'main' && item.event !== 'pull_request')
+              .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
+
+            if (context.eventName === 'workflow_run' && run?.id !== context.payload.workflow_run.id) {
+              core.setFailed('Existe un análisis más reciente; se espera a su resultado.');
+            } else if (!run) {
+              core.setFailed(`No existe un análisis de seguridad para el commit ${context.sha}.`);
+            } else if (run.status !== 'completed' || run.conclusion !== 'success') {
+              core.setFailed(`El último análisis no terminó correctamente: ${run.html_url}`);
+            } else {
+              core.setOutput('run-id', String(run.id));
+              // El análisis válido puede conservar hallazgos pendientes de aceptación.
+              core.info(`Análisis que se va a revisar: ${run.html_url}`);
+            }
+      - name: Descargar decisión de seguridad
+        if: env.DEPLOY_REF == 'refs/heads/main'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: devsecops-security-report-${{ env.DEPLOY_SHA }}
+          path: security-report
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.security-run.outputs.run-id }}
+          github-token: ${{ github.token }}
+      - name: Comprobar el informe y la aceptación del riesgo
+        id: authorization
+        if: env.DEPLOY_REF == 'refs/heads/main'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          ACCEPT_RISK: ${{ inputs.accept_risk }}
+          SECURITY_RUN_ID: ${{ steps.security-run.outputs.run-id }}
+        with:
+          script: |
+            const authorize = require('./.devsecops/engine/scripts/authorize_deployment.cjs');
+            const deployment = {...context, repo: context.repo, sha: process.env.DEPLOY_SHA, ref: process.env.DEPLOY_REF};
+            const allowed = await authorize({github, context: deployment, core, runId: Number(process.env.SECURITY_RUN_ID), acceptRisk: process.env.ACCEPT_RISK === 'true'});
+            core.setOutput('allowed', String(allowed));

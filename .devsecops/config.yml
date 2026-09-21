@@ -1,0 +1,18 @@
+schemaVersion: '1.0'
+devsecopsVersion: 0.9.4
+profile:
+  id: spring-boot
+project:
+  root: .
+  buildSystem: maven
+  javaVersion: 17
+  dockerfile: Dockerfile
+analysis:
+  sast: semgrep
+  sca: trivy-sca
+  container: trivy
+policy:
+  blockOn: [CRITICAL]
+  requireReviewOn: [HIGH, UNKNOWN]
+dashboard:
+  enabled: false

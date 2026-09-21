@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0",
+  "generatedBy": "devsecops-learning-initializer",
+  "devsecopsVersion": "0.9.4",
+  "generatedAt": "2026-09-21",
+  "profile": {
+    "profile_id": "spring-boot",
+    "profile_name": "Spring Boot",
+    "confidence": 95,
+    "project_root": ".",
+    "build_system": "maven",
+    "java_version": "17",
+    "dockerfile": "Dockerfile",
+    "evidence": [
+      "pom.xml",
+      "Dockerfile"
+    ]
+  },
+  "capabilities": {
+    "securityPipeline": true,
+    "localDashboard": false
+  }
+}
