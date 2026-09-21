@@ -3,7 +3,7 @@ const deploy = require('../scripts/deploy_dokploy.cjs');
 Object.assign(process.env, {DOKPLOY_URL:'https://example.test', DOKPLOY_API_KEY:'test-only', DOKPLOY_COMPOSE_ID:'compose-test', GITHUB_RUN_ATTEMPT:'1'});
 const context={sha:'a'.repeat(40), runId:123, repo:{owner:'owner',repo:'repo'}};
 const core={info(){}};
-async function scenario({config={},status='done',existingTag=false,wrongTag=false,oldDone=false,requestFails=false,otherRun=false}={}) {
+async function scenario({config={},status='done',existingTag=false,wrongTag=false,oldDone=false,requestFails=false,wrongCommit=false,duplicate=false,runningFirst=false}={}) {
   const calls=[];
   let polls=0;
   const github={rest:{git:{
@@ -16,10 +16,12 @@ async function scenario({config={},status='done',existingTag=false,wrongTag=fals
     if(url.pathname==='/api/compose.one')result={sourceType:'github',owner:'owner',repository:'repo',autoDeploy:false,command:'',...config};
     else if(url.pathname==='/api/deployment.allByCompose'){
       polls++;
-      result=polls===1?[{deploymentId:'old',title:'GitHub 123-1',status:'done'}]:[{deploymentId:oldDone?'old':'new',title:'Mensaje del commit de GitHub',description:'Commit: '+context.sha+'. GitHub '+(otherRun?'999':'123')+'-1',status}];
+      // Formato observado en Dokploy: reemplaza ambos textos con datos del commit.
+      result=polls===1?[{deploymentId:'old',description:'Commit: '+context.sha,status:'done'}]:[{deploymentId:oldDone?'old':'new',title:'Mensaje del commit de GitHub',description:'Commit: '+(wrongCommit?'b'.repeat(40):context.sha),status:runningFirst&&polls===2?'running':status}];
+      if(duplicate&&polls>1)result.push({...result[0],deploymentId:'another'});
     } else if(url.pathname==='/api/compose.update'){
       const body=JSON.parse(options.body);assert.equal(body.branch,'deploy-'+context.sha);assert.equal(body.composePath,'./compose.main.yml');result={};
-    } else if(url.pathname==='/api/compose.deploy'){assert.equal(JSON.parse(options.body).description,'Commit: '+context.sha+'. GitHub 123-1');result={success:true};}
+    } else if(url.pathname==='/api/compose.deploy'){assert.equal(JSON.parse(options.body).description,'Commit: '+context.sha);result={success:true};}
     else throw new Error('Unexpected route');
     return {ok:!requestFails,status:requestFails?403:200,json:async()=>result};
   };
@@ -38,7 +40,9 @@ async function scenario({config={},status='done',existingTag=false,wrongTag=fals
   await assert.rejects(scenario({status:'error'}),/fallado/);
   await assert.rejects(scenario({oldDone:true}),/diez minutos/);
   await assert.rejects(scenario({requestFails:true}),/HTTP 403/);
-  await assert.rejects(scenario({otherRun:true}),/diez minutos/);
-  console.log('9 escenarios de despliegue simulados: correctos. No se han realizado peticiones reales.');
+  await assert.rejects(scenario({wrongCommit:true}),/diez minutos/);
+  await assert.rejects(scenario({duplicate:true}),/varios despliegues/);
+  await scenario({runningFirst:true});
+  console.log('11 escenarios de despliegue simulados: correctos. No se han realizado peticiones reales.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
