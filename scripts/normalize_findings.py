@@ -19,7 +19,7 @@ SEVERITY_MAP = {
     "WARNING": "MEDIUM",
     "WARN": "MEDIUM",
     "NOTE": "LOW",
-    "UNKNOWN": "INFO",
+    "UNKNOWN": "UNKNOWN",
 }
 
 
@@ -30,10 +30,10 @@ def load(path: Path) -> dict[str, Any]:
 
 
 def normalized_severity(value: str | None) -> str:
-    value = (value or "UNKNOWN").upper()
+    value = value.strip().upper() if isinstance(value, str) else "UNKNOWN"
     if value in {"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"}:
         return value
-    return SEVERITY_MAP.get(value, "INFO")
+    return SEVERITY_MAP.get(value, "UNKNOWN")
 
 
 def semgrep_findings(data: dict[str, Any], commit: str) -> list[dict[str, Any]]:
@@ -112,7 +112,7 @@ def issue_key(finding: dict[str, Any]) -> tuple[Any, ...]:
 
 
 def summarize(findings: list[dict[str, Any]]) -> dict[str, Any]:
-    counts = {level: 0 for level in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")}
+    counts = {level: 0 for level in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO", "UNKNOWN")}
     unique_counts = counts.copy()
     unique_issues: dict[tuple[Any, ...], dict[str, Any]] = {}
     affected_components: set[str] = set()

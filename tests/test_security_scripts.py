@@ -151,6 +151,7 @@ class EvaluatePolicyTest(unittest.TestCase):
     policy = {
         "blockOn": ["CRITICAL"],
         "requireReviewOn": ["HIGH"],
+        "allowOn": ["MEDIUM", "LOW", "INFO"],
     }
     analysis_success = {"status": "SUCCESS", "errors": []}
 

@@ -418,7 +418,7 @@ tbody tr:hover {
 }
 
 .severity-badge.critical { background: var(--critical); }
-.severity-badge.high { background: var(--high); }
+.severity-badge.high, .severity-badge.unknown { background: var(--high); }
 .severity-badge.medium { background: var(--medium); }
 .severity-badge.low { background: var(--low); }
 .severity-badge.info { background: var(--info); }

@@ -7,19 +7,53 @@ from pathlib import Path
 
 def load_json(path: Path) -> dict:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        document = json.loads(path.read_text(encoding="utf-8"))
+        return document if isinstance(document, dict) else {}
     except (OSError, UnicodeError, json.JSONDecodeError):
         return {}
 
 
 def evaluate(findings: list[dict], policy: dict, analysis_status: dict) -> dict:
-    analyzer_error = analysis_status.get("status") != "SUCCESS"
-    blocking = [item for item in findings if item.get("severity") in policy["blockOn"]]
-    review = [item for item in findings if item.get("severity") in policy["requireReviewOn"]]
+    # No se evalúan hallazgos con una política incompleta.
+    levels = {"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO", "UNKNOWN"}
+    fields = ("blockOn", "requireReviewOn", "allowOn")
+    valid_policy = isinstance(policy, dict) and all(
+        isinstance(policy.get(field), list)
+        and all(isinstance(level, str) and level in levels for level in policy[field])
+        for field in fields
+    )
+    if not isinstance(analysis_status, dict):
+        analysis_status = {"status": "ERROR", "errors": ["El estado de los analizadores no es válido."]}
+    reported_errors = analysis_status.get("errors", [])
+    errors = (
+        reported_errors.copy()
+        if isinstance(reported_errors, list) and all(isinstance(item, str) for item in reported_errors)
+        else ["El estado de los analizadores no es válido."]
+    )
+    if not valid_policy:
+        errors.append("La política de seguridad no existe o no es válida.")
+    if not isinstance(findings, list) or not all(isinstance(item, dict) for item in findings):
+        errors.append("El informe normalizado no existe o no es válido.")
+    if errors or analysis_status.get("status") != "SUCCESS":
+        return {
+            "status": "ANALYSIS_ERROR",
+            "blockingFindingIds": [],
+            "reviewFindingIds": [],
+            "analysisErrors": list(dict.fromkeys(errors)),
+        }
 
-    if analyzer_error:
-        status = "ANALYSIS_ERROR"
-    elif blocking:
+    blocking = [item for item in findings if item.get("severity") in policy["blockOn"]]
+    # Una severidad desconocida o no cubierta por la política requiere revisión.
+    review = [
+        item for item in findings
+        if item.get("severity") not in policy["blockOn"]
+        and (
+            item.get("severity") in policy["requireReviewOn"]
+            or item.get("severity") not in policy["allowOn"]
+            or item.get("severity") == "UNKNOWN"
+        )
+    ]
+    if blocking:
         status = "BLOCKED"
     elif review:
         status = "REVIEW_REQUIRED"
@@ -59,20 +93,9 @@ def main() -> None:
     policy = load_json(args.policy)
     analysis_status = load_json(args.analysis_status)
 
-    if not isinstance(findings_document.get("findings"), list):
-        analysis_status = {
-            "status": "ERROR",
-            "errors": ["El informe normalizado no existe o no es válido."],
-        }
-    required_policy_fields = ("blockOn", "requireReviewOn", "allowOn")
-    if not all(isinstance(policy.get(field), list) for field in required_policy_fields):
-        analysis_status = {
-            "status": "ERROR",
-            "errors": ["La política de seguridad no existe o no es válida."],
-        }
-
+    # evaluate comprueba los datos y produce una decisión incluso si son inválidos.
     decision = evaluate(
-        findings_document.get("findings", []),
+        findings_document.get("findings"),
         policy,
         analysis_status,
     )

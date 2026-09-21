@@ -372,7 +372,7 @@ jobs:
               "| Severidad | Instancias | Problemas únicos |",
               "|---|---:|---:|",
           ]
-          for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
+          for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO", "UNKNOWN"):
               lines.append(
                   f"| `{severity}` | {counts.get(severity, 0)} | "
                   f"{unique_counts.get(severity, 0)} |"

@@ -170,7 +170,7 @@ GH_TOKEN=<token con Actions: Read>
 
 El dominio del panel debe apuntar al puerto interno `8080` del servicio `security-dashboard`. En este entorno la remediación mediante IA está desactivada y el acceso al panel debe protegerse porque contiene información de seguridad.
 
-Producción utiliza `compose.main.yml`. El webhook se guarda en GitHub como secreto de entorno `DOKPLOY_DEPLOY_WEBHOOK`; la URL de comprobación posterior se configura como `DEPLOY_HEALTH_URL`.
+Producción utiliza `compose.main.yml`. El workflow crea una etiqueta para el commit aprobado, configura esa etiqueta en Dokploy y solicita el despliegue por su API. Espera a que termine esa solicitud antes de comprobar la salud de la aplicación. La configuración se explica en [Despliegue en Dokploy](docs/despliegue-dokploy.md).
 
 ## Reutilización en otros proyectos
 
@@ -198,3 +198,5 @@ docker build -t movie-review:local .
 ---
 
 Creado por [CGARCHER](https://github.com/CGARCHER).
+
+El panel local se publica únicamente en 127.0.0.1:8081. La política exige revisión para UNKNOWN y conserva una decisión ANALYSIS_ERROR cuando la configuración de la política no es válida.
