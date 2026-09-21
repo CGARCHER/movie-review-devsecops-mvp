@@ -13,7 +13,7 @@ module.exports = async ({github, context, core}) => {
   const tag = `deploy-${context.sha}`;
   const title = `GitHub ${context.runId}-${process.env.GITHUB_RUN_ATTEMPT}`;
 
-  const description = `Commit: ${context.sha}. ${title}`;
+  const description = `Commit: ${context.sha}`;
 
   async function api(route, body) {
     const response = await fetch(new URL(`/api/${route}`, base), {
@@ -56,11 +56,16 @@ module.exports = async ({github, context, core}) => {
 
   // Un registro antiguo con estado Done no sirve como confirmación.
   const previousIds = new Set(previous.map(item => item.deploymentId));
+  let deploymentId;
   for (let attempt = 0; attempt < 120; attempt++) {
     const deployments = await api(`deployment.allByCompose?${query}`);
     if (!Array.isArray(deployments)) throw new Error('Respuesta de despliegues inválida.');
-    // Dokploy sustituye el título por el mensaje del commit; conserva la descripción.
-    const deployment = deployments.find(item => item.description === description && !previousIds.has(item.deploymentId));
+    // Dokploy sustituye título y descripción. Conserva "Commit: <sha>".
+    // Solo seguimos un registro nuevo del commit solicitado, siempre por su ID.
+    const matches = deployments.filter(item => item.description === description && !previousIds.has(item.deploymentId));
+    if (matches.length > 1) throw new Error('Hay varios despliegues nuevos del mismo commit. Revisa Dokploy.');
+    deploymentId ??= matches[0]?.deploymentId;
+    const deployment = matches.find(item => item.deploymentId === deploymentId);
     if (deployment?.status === 'error') throw new Error('El despliegue ha fallado en Dokploy. Revisa su registro.');
     if (deployment?.status === 'done') {
       core.info(`Dokploy ha terminado el despliegue ${deployment.deploymentId}.`);
