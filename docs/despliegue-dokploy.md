@@ -1,6 +1,6 @@
 # Despliegue en Dokploy
 
-El workflow manual despliega producción desde main. Comprueba el informe del commit y, si hay riesgo, la casilla de aceptación del responsable. Crea una etiqueta `deploy-<SHA>` para identificar el commit y nunca mueve una etiqueta existente. Dokploy construye el código de esa etiqueta con `compose.main.yml`.
+El workflow despliega automáticamente producción cuando el análisis de un push a main termina con APPROVED. Con hallazgos, permite el despliegue manual con aceptación. Comprueba el informe del commit y, si hay riesgo, la casilla de aceptación del responsable. Crea una etiqueta `deploy-<SHA>` para identificar el commit y nunca mueve una etiqueta existente. Dokploy construye el código de esa etiqueta con `compose.main.yml`.
 
 Después, el workflow espera el resultado de su propia solicitud de despliegue. Solo cuando Dokploy comunica `done` comprueba que la aplicación responde con `UP`. Un despliegue antiguo no sirve como confirmación.
 
@@ -23,12 +23,20 @@ Para `staging`, configura su propio servicio y sus propias variables. No reutili
 
 El permiso `contents: write` del workflow permite crear la etiqueta. Protege las etiquetas `deploy-*` frente a cambios y borrados y evita crear ramas con ese prefijo. No lances despliegues manuales ni cambies la configuración del servicio mientras se ejecuta la promoción. Los workflows de despliegue del repositorio se ejecutan de uno en uno.
 
+## Despliegue automático
+
+Configura `main` como rama predeterminada de GitHub y publica este workflow en ella. Al terminar el análisis de un push a `main`, se comprueba el informe y se despliega solo si está `APPROVED`. Los análisis de PR, otras ramas y las ejecuciones periódicas no provocan despliegues.
+
+Se utiliza el SHA exacto del análisis para descargar el informe, obtener el código y crear la etiqueta. Si main ya ha cambiado o existe un análisis más reciente, esta ejecución se detiene. Los hallazgos que requieren aceptación esperan al despliegue manual; los errores técnicos nunca autorizan el despliegue.
+
+Este disparador utiliza [workflow_run de GitHub](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
+
 ## Primera ejecución
 
 1. Sube los cambios del repositorio y comprueba los nombres de servicios, el volumen de datos y las variables del Compose antes de sustituir una configuración antigua.
 2. Revisa el informe en los checks de la PR y fusiona los cambios conforme a las reglas del repositorio. Espera al análisis del commit final de main.
 3. Si la decisión es `REVIEW_REQUIRED` o `BLOCKED`, marca «Acepto los hallazgos del análisis» al lanzar el despliegue. Con `APPROVED` no hace falta esa aceptación adicional.
-4. Ejecuta `Deploy to Dokploy` desde main y selecciona `production`.
+4. Con `APPROVED`, el push a main inicia el despliegue automáticamente al terminar el análisis. Para aceptar hallazgos o repetir un despliegue, ejecuta `Deploy to Dokploy` desde main y selecciona `production`.
 5. Comprueba el resultado del workflow y el registro correspondiente en Dokploy.
 
 Si se agota la espera, consulta Dokploy antes de repetir la solicitud: el despliegue puede seguir en marcha. El workflow no reintenta automáticamente la petición de despliegue ni elimina volúmenes.
