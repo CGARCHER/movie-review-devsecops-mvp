@@ -13,6 +13,8 @@ module.exports = async ({github, context, core}) => {
   const tag = `deploy-${context.sha}`;
   const title = `GitHub ${context.runId}-${process.env.GITHUB_RUN_ATTEMPT}`;
 
+  const description = `Commit: ${context.sha}. ${title}`;
+
   async function api(route, body) {
     const response = await fetch(new URL(`/api/${route}`, base), {
       method: body ? 'POST' : 'GET',
@@ -49,7 +51,7 @@ module.exports = async ({github, context, core}) => {
   }
   // Dokploy construirá esta etiqueta aunque main reciba nuevos commits.
   await api('compose.update', {composeId, branch: tag, composePath: './compose.main.yml'});
-  await api('compose.deploy', {composeId, title, description: `Commit: ${context.sha}`});
+  await api('compose.deploy', {composeId, title, description});
   core.info(`Solicitado el despliegue de ${context.sha}.`);
 
   // Un registro antiguo con estado Done no sirve como confirmación.
@@ -57,7 +59,8 @@ module.exports = async ({github, context, core}) => {
   for (let attempt = 0; attempt < 120; attempt++) {
     const deployments = await api(`deployment.allByCompose?${query}`);
     if (!Array.isArray(deployments)) throw new Error('Respuesta de despliegues inválida.');
-    const deployment = deployments.find(item => item.title === title && !previousIds.has(item.deploymentId));
+    // Dokploy sustituye el título por el mensaje del commit; conserva la descripción.
+    const deployment = deployments.find(item => item.description === description && !previousIds.has(item.deploymentId));
     if (deployment?.status === 'error') throw new Error('El despliegue ha fallado en Dokploy. Revisa su registro.');
     if (deployment?.status === 'done') {
       core.info(`Dokploy ha terminado el despliegue ${deployment.deploymentId}.`);
