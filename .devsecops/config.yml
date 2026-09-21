@@ -15,4 +15,4 @@ policy:
   blockOn: [CRITICAL]
   requireReviewOn: [HIGH, UNKNOWN]
 dashboard:
-  enabled: false
+  enabled: true

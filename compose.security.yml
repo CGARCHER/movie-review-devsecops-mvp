@@ -1,0 +1,33 @@
+services:
+  security-dashboard:
+    build:
+      context: ./.devsecops/dashboard
+    image: devsecops-learning-dashboard:local
+    ports:
+      - "127.0.0.1:8081:8080"
+    environment:
+      REPORT_ROOT: /workspace/reports
+      SOURCE_ROOT: /workspace/source
+      DASHBOARD_CONFIG_FILE: /run/secrets/dashboard.env
+      AI_REMEDIATION_ENABLED: "true"
+    volumes:
+      - security-reports:/workspace/reports
+      # La configuración se lee como fichero y los tokens no aparecen en docker inspect.
+      - ./.devsecops/dashboard.env:/run/secrets/dashboard.env:ro
+      # El panel puede leer el código para orientar el parche, pero no modificarlo.
+      - ./:/workspace/source:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  security-reports:
