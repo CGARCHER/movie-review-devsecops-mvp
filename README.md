@@ -170,7 +170,7 @@ GH_TOKEN=<token con Actions: Read>
 
 El dominio del panel debe apuntar al puerto interno `8080` del servicio `security-dashboard`. En este entorno la remediación mediante IA está desactivada y el acceso al panel debe protegerse porque contiene información de seguridad.
 
-Producción utiliza `compose.main.yml` y se despliega desde main. El workflow crea una etiqueta para el commit autorizado, configura esa etiqueta en Dokploy y solicita el despliegue por su API. Espera a que termine esa solicitud antes de comprobar la salud de la aplicación. La configuración y la aceptación del riesgo se explican en [Despliegue en Dokploy](docs/despliegue-dokploy.md).
+Producción utiliza `compose.main.yml` y se despliega desde main: automáticamente después del análisis de un push con `APPROVED`, o manualmente con aceptación si hay hallazgos. El workflow crea una etiqueta para el commit autorizado, configura esa etiqueta en Dokploy y solicita el despliegue por su API. Espera a que termine esa solicitud antes de comprobar la salud de la aplicación. La configuración y la aceptación del riesgo se explican en [Despliegue en Dokploy](docs/despliegue-dokploy.md).
 
 ## Reutilización en otros proyectos
 

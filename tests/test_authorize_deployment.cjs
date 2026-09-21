@@ -34,8 +34,8 @@ async function scenario(options = {}) {
     for (const [name, document] of Object.entries(reports)) {
       if (name !== options.missing) fs.writeFileSync(path.join(reportDir, name), JSON.stringify(document));
     }
-    await authorize({github, context, core, runId: 42, reportDir, acceptRisk: options.acceptRisk ?? true});
-    return {messages};
+    const allowed = await authorize({github, context, core, runId: 42, reportDir, acceptRisk: options.acceptRisk ?? true});
+    return {messages, allowed};
   } finally {
     fs.rmSync(reportDir, {recursive: true, force: true});
   }
@@ -103,5 +103,48 @@ for (const [name, options, message] of [
 ]) {
   test(`detiene el despliegue ante ${name}`, async () => {
     await assert.rejects(scenario(options), message);
+  });
+}
+
+test('APPROVED autoriza el despliegue automático', async () => {
+  assert.equal((await scenario({eventName: 'workflow_run', status: 'APPROVED', acceptRisk: false})).allowed, true);
+});
+for (const status of ['BLOCKED', 'REVIEW_REQUIRED']) {
+  test(`${status} no se despliega automáticamente aunque llegue aceptación`, async () => {
+    assert.equal((await scenario({eventName: 'workflow_run', status})).allowed, false);
+  });
+}
+test('el automático sigue bloqueando un analizador fallido', async () => {
+  await assert.rejects(scenario({eventName: 'workflow_run', status: 'APPROVED', failedJob: 'sca'}), /analizadores/);
+});
+
+for (const [name, currentSha, latestId, expectedId] of [
+  ['usa el SHA analizado aunque el evento tenga otro SHA', sha, 42, 42],
+  ['detiene un commit que ya no es la punta de main', 'b'.repeat(40), 42, undefined],
+  ['detiene un análisis sustituido por otro más reciente', sha, 43, undefined],
+]) {
+  test(`el automático ${name}`, async () => {
+    const previous = process.env.DEPLOY_SHA;
+    process.env.DEPLOY_SHA = sha;
+    let selected;
+    let failed = false;
+    const github = {rest: {
+      repos: {async getBranch() {return {data: {commit: {sha: currentSha}}};}},
+      actions: {async listWorkflowRuns(args) {
+        assert.equal(args.head_sha, sha);
+        return {data: {workflow_runs: [{id: latestId, head_branch: 'main', event: 'push',
+          status: 'completed', conclusion: 'success', updated_at: finished}]}};
+      }},
+    }};
+    const core = {info() {}, setFailed() {failed = true;}, setOutput(name, value) {selected = Number(value);}};
+    try {
+      await selectRun(github, {repo: {owner: 'owner', repo: 'repo'}, sha: 'c'.repeat(40),
+        eventName: 'workflow_run', payload: {workflow_run: {id: 42}}}, core);
+      assert.equal(selected, expectedId);
+      assert.equal(failed, expectedId === undefined);
+    } finally {
+      if (previous === undefined) delete process.env.DEPLOY_SHA;
+      else process.env.DEPLOY_SHA = previous;
+    }
   });
 }

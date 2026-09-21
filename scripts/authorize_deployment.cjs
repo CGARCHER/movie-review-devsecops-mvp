@@ -28,7 +28,13 @@ module.exports = async ({github, context, core, runId, acceptRisk = false, repor
     throw new Error('Todos los analizadores deben terminar correctamente.');
   }
   core.info(`Resultado de seguridad para ${context.sha}: ${decision.status}.`);
-  if (decision.status === 'APPROVED') return;
+  if (decision.status === 'APPROVED') return true;
+
+  // El automático solo despliega APPROVED; los demás estados esperan decisión manual.
+  if (context.eventName === 'workflow_run') {
+    core.warning('Hay hallazgos pendientes: revisa el informe y usa el despliegue manual si aceptas el riesgo.');
+    return false;
+  }
 
   // La casilla pertenece a esta ejecución manual; no modifica el informe.
   if (context.eventName !== 'workflow_dispatch' || acceptRisk !== true) {
@@ -38,4 +44,5 @@ module.exports = async ({github, context, core, runId, acceptRisk = false, repor
   await core.summary.addHeading('Aceptación del riesgo')
     .addRaw(`Responsable: ${context.actor}. Commit: ${context.sha}. Resultado: ${decision.status}.\n`)
     .write();
+  return true;
 };
