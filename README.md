@@ -122,7 +122,7 @@ Ejemplo de reseña:
 | --- | --- |
 | `.github/workflows/ci.yml` | Compila, ejecuta las pruebas y construye la imagen Docker. |
 | `.github/workflows/security.yml` | Ejecuta SAST, SCA y análisis de la imagen; después normaliza los informes y aplica la política. |
-| `.github/workflows/deploy-dokploy.yml` | Despliega el commit de main con informe válido y, si hay riesgo, aceptación del responsable registrada en la PR. |
+| `.github/workflows/deploy-dokploy.yml` | Despliega el commit de main con informe válido y, si hay riesgo, aceptación mediante una casilla al lanzar el despliegue. |
 
 Antes de analizar, `security.yml` detecta la raíz de Spring Boot, Maven o Gradle, la versión de Java y el Dockerfile. También admite proyectos situados en un subdirectorio. Si encuentra varios módulos posibles, solicita `project_path` para no elegir uno de forma silenciosa.
 
@@ -147,7 +147,7 @@ Los ejemplos vulnerables de `security-fixtures` solo sirven para comprobar que l
 | `BLOCKED` | Existe al menos un hallazgo `CRITICAL`. |
 | `ANALYSIS_ERROR` | Falta un informe o un analizador no ha terminado correctamente. |
 
-La ausencia de un informe nunca se interpreta como ausencia de vulnerabilidades. Los despliegues de main requieren un análisis completo del mismo commit. Los estados `REVIEW_REQUIRED` y `BLOCKED` permiten continuar si el responsable registra su aceptación del riesgo en la PR. El informe conserva los hallazgos y su estado original.
+La ausencia de un informe nunca se interpreta como ausencia de vulnerabilidades. Los despliegues de main requieren un análisis completo del mismo commit. Los estados `REVIEW_REQUIRED` y `BLOCKED` permiten continuar si el responsable marca «Acepto los hallazgos del análisis» al lanzar el despliegue. El informe conserva los hallazgos y su estado original.
 
 ## Panel de seguridad
 
@@ -170,7 +170,7 @@ GH_TOKEN=<token con Actions: Read>
 
 El dominio del panel debe apuntar al puerto interno `8080` del servicio `security-dashboard`. En este entorno la remediación mediante IA está desactivada y el acceso al panel debe protegerse porque contiene información de seguridad.
 
-Producción utiliza `compose.main.yml` y se despliega desde main. El workflow crea una etiqueta para el commit autorizado, configura esa etiqueta en Dokploy y solicita el despliegue por su API. Espera a que termine esa solicitud antes de comprobar la salud de la aplicación. La configuración y la aceptación del riesgo se explican en [Despliegue en Dokploy](docs/despliegue-dokploy.md).
+Producción utiliza `compose.main.yml` y se despliega desde main: automáticamente después del análisis de un push con `APPROVED`, o manualmente con aceptación si hay hallazgos. El workflow crea una etiqueta para el commit autorizado, configura esa etiqueta en Dokploy y solicita el despliegue por su API. Espera a que termine esa solicitud antes de comprobar la salud de la aplicación. La configuración y la aceptación del riesgo se explican en [Despliegue en Dokploy](docs/despliegue-dokploy.md).
 
 ## Reutilización en otros proyectos
 

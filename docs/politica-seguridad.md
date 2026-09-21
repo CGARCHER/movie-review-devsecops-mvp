@@ -55,12 +55,11 @@ La autorización humana se registra por separado y conserva el estado del inform
 - Staging: puede utilizarse para pruebas controladas. Si despliega main, aplica
   las mismas comprobaciones del informe y la aceptación del riesgo.
 - Producción: utiliza main y requiere un análisis completo del commit. Con
-  `APPROVED` puede continuar; con `REVIEW_REQUIRED` o `BLOCKED`, la persona que
-  fusionó la PR debe registrar su aceptación y justificación para ese commit.
+  `APPROVED` puede continuar; con `REVIEW_REQUIRED` o `BLOCKED`, quien lanza
+  el despliegue debe marcar la casilla de aceptación.
 
-El comentario debe ser posterior al último análisis y a la fusión. Un cambio
-de commit o un nuevo análisis exige revisar la aceptación. El formato y los
-pasos están en [Despliegue en Dokploy](despliegue-dokploy.md).
+La casilla está desmarcada por defecto. El workflow comprueba automáticamente
+el análisis del commit y registra la aceptación en su resumen. Los pasos están en [Despliegue en Dokploy](despliegue-dokploy.md).
 
 La remediación mediante IA es informativa y solo está habilitada en el entorno
 local. Puede explicar un hallazgo y proponer un cambio para que lo revise el
