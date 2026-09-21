@@ -55,9 +55,11 @@ function renderSummary(summary) {
 function renderChart(counts) {
   const chart = byId("severity-chart");
   chart.replaceChildren();
-  const maximum = Math.max(...severityOrder.map((level) => counts[level] ?? 0), 1);
+  // No ocultar los hallazgos cuya severidad no se ha podido determinar.
+  const levels = counts.UNKNOWN > 0 ? [...severityOrder, "UNKNOWN"] : severityOrder;
+  const maximum = Math.max(...levels.map((level) => counts[level] ?? 0), 1);
 
-  for (const severity of severityOrder) {
+  for (const severity of levels) {
     const value = counts[severity] ?? 0;
     const row = document.createElement("div");
     row.className = "chart-row";
@@ -321,7 +323,7 @@ function renderEditor(patchAvailable, content, file, generatedFromSource = false
   const columnHeader = document.createElement("div");
   columnHeader.className = "editor-column-header";
   appendCell(columnHeader, "antes", "");
-  appendCell(columnHeader, "despues", "");
+  appendCell(columnHeader, "después", "");
   appendCell(columnHeader, "", "");
   appendCell(columnHeader, "contenido", "");
   code.appendChild(columnHeader);
@@ -368,18 +370,18 @@ function renderEditor(patchAvailable, content, file, generatedFromSource = false
 
   const lineLabel = (entries) => {
     if (entries.length === 0) {
-      return "Sin lineas";
+      return "Sin líneas";
     }
     const numbers = entries.map((entry) => entry.number);
     if (numbers.length === 1) {
-      return `Linea ${numbers[0]}`;
+      return `Línea ${numbers[0]}`;
     }
     const consecutive = numbers.every(
       (number, index) => index === 0 || number === numbers[index - 1] + 1,
     );
     return consecutive
-      ? `Lineas ${numbers[0]}-${numbers[numbers.length - 1]}`
-      : `Lineas ${numbers.join(", ")}`;
+      ? `Líneas ${numbers[0]}-${numbers[numbers.length - 1]}`
+      : `Líneas ${numbers.join(", ")}`;
   };
 
   byId("remediation-editor-removed-line").textContent = lineLabel(removedLines);
@@ -389,15 +391,15 @@ function renderEditor(patchAvailable, content, file, generatedFromSource = false
     ? "a modificar"
     : removedLines.length > 0
       ? "a eliminar"
-      : "a anadir";
+      : "a añadir";
   byId("remediation-editor-location").textContent =
     `${lineLabel(primaryLines)} ${locationAction}`;
   byId("remediation-editor-removed").textContent = removedLines.length > 0
     ? removedLines.map((entry) => entry.text).join("\n")
-    : "No se elimina ninguna linea.";
+    : "No se elimina ninguna línea.";
   byId("remediation-editor-added").textContent = addedLines.length > 0
     ? addedLines.map((entry) => entry.text).join("\n")
-    : "No se anade ninguna linea.";
+    : "No se añade ninguna línea.";
 
   editor.classList.remove("hidden");
 }
@@ -466,10 +468,10 @@ function renderRemediation(result, finding) {
     ? patch.generatedFromSource === true
       ? "Basado en el fichero"
       : `Confianza ${confidenceLabels[safeValue(patch.confidence, "LOW")] ?? "baja"}`
-    : "Sin cambio propuesto";
+    : "Sin cambio de código";
   byId("remediation-patch-file").textContent = patchAvailable
-    ? `Fichero que debes modificar: ${safeValue(patch.file)}`
-    : "No hay ningún archivo que modificar automáticamente.";
+    ? `Archivo del cambio propuesto: ${safeValue(patch.file)}`
+    : "No se ha generado un cambio de código. Revisa la recomendación.";
   byId("remediation-patch-reason").textContent = safeValue(
     patch.reason,
     "No hay contexto suficiente para preparar un cambio seguro.",
@@ -559,12 +561,11 @@ async function loadDashboard() {
     }
 
     const base = `/reports/runs/${latest}`;
-    const [findingsResult, decisionResult, metadataResult, remediationResult, analyzerResult] =
+    const [findingsResult, decisionResult, metadataResult, analyzerResult] =
       await Promise.allSettled([
         fetchJson(`${base}/normalized/findings.json`),
         fetchJson(`${base}/normalized/decision.json`),
         fetchJson(`${base}/run-metadata.json`),
-        fetchText(`${base}/ai/remediation.md`),
         fetchJson(`${base}/normalized/analyzer-status.json`),
       ]);
 
@@ -594,10 +595,9 @@ async function loadDashboard() {
     populateToolFilter();
     renderFindings();
 
-    const hasSavedRemediation = remediationResult.status === "fulfilled";
-    showRemediationEmpty(hasSavedRemediation
-      ? "Existe una remediación guardada. Selecciona un hallazgo para consultarla de nuevo."
-      : "Selecciona un hallazgo y pulsa «Explicar con IA» para ver una orientación.");
+    showRemediationEmpty(
+      "Pulsa «Cómo corregirlo» en un hallazgo para solicitar una explicación a la IA.",
+    );
     byId("remediation-status").textContent = "";
   } catch (loadError) {
     allFindings = [];
@@ -605,7 +605,7 @@ async function loadDashboard() {
     renderAnalyzerStatus({});
     renderFindings();
     error.textContent =
-      `${loadError.message} Pulsa "Actualizar datos" y vuelve a intentarlo.`;
+      `${loadError.message} Pulsa «Buscar último informe» y vuelve a intentarlo.`;
     error.classList.remove("hidden");
   }
 }

@@ -54,6 +54,7 @@
     <section class="two-columns">
       <article class="panel">
         <h2>Hallazgos por severidad</h2>
+        <p class="chart-description">Número de detecciones por severidad.</p>
         <div id="severity-chart" class="severity-chart">
           <p class="empty-message">Todavía no se han cargado datos.</p>
         </div>
@@ -65,13 +66,13 @@
           <div><dt>Commit</dt><dd id="analysis-commit">—</dd></div>
           <div><dt>Ejecución</dt><dd id="analysis-run">—</dd></div>
           <div><dt>Fecha</dt><dd id="analysis-date">—</dd></div>
-          <div><dt>Resultado</dt><dd id="analysis-conclusion">—</dd></div>
-          <div><dt>Instancias detectadas</dt><dd id="analysis-total">—</dd></div>
+          <div><dt>Resultado en GitHub Actions</dt><dd id="analysis-conclusion">—</dd></div>
+          <div><dt>Detecciones totales</dt><dd id="analysis-total">—</dd></div>
           <div><dt>Problemas únicos</dt><dd id="analysis-unique">—</dd></div>
           <div><dt>Componentes afectados</dt><dd id="analysis-components">—</dd></div>
         </dl>
         <div class="analyzer-overview">
-          <h3>Tecnolog&iacute;as del an&aacute;lisis</h3>
+          <h3>Herramientas de an&aacute;lisis</h3>
           <div id="analyzer-status-list" class="analyzer-status-list">
             <p class="empty-message">Estado no disponible.</p>
           </div>
@@ -151,7 +152,7 @@
       </div>
       <div id="remediation-content" class="remediation-content" aria-live="polite">
         <p id="remediation-empty" class="remediation-empty">
-          Selecciona un hallazgo en la tabla para consultar c&oacute;mo corregirlo.
+          Pulsa «Cómo corregirlo» en un hallazgo para solicitar una explicación a la IA.
         </p>
         <article id="remediation-result" class="remediation-result hidden">
           <div class="remediation-finding">
@@ -174,7 +175,7 @@
               <p id="remediation-recommendation">-</p>
               <p id="remediation-patch-file" class="patch-file">-</p>
               <p id="remediation-patch-reason" class="hidden">-</p>
-              <div id="remediation-editor" class="editor-window hidden" aria-label="Fichero abierto en modo simulacion">
+              <div id="remediation-editor" class="editor-window hidden" aria-label="Vista del cambio propuesto, de solo lectura">
                 <div class="editor-window-bar">
                   <div class="window-controls" aria-hidden="true">
                     <span class="window-control close"></span>
@@ -190,29 +191,29 @@
                 </div>
                 <div class="editor-toolbar">
                   <span class="editor-breadcrumb">
-                    project <b>/</b> <strong id="remediation-editor-file">Dockerfile</strong>
-                    <em id="remediation-editor-location">Linea pendiente</em>
+                    proyecto <b>/</b> <strong id="remediation-editor-file">Dockerfile</strong>
+                    <em id="remediation-editor-location">Ubicación del cambio</em>
                   </span>
                   <span class="editor-toolbar-status">
                     <span class="editor-status-dot"></span>
                     <span id="remediation-editor-status">cambio sugerido</span>
                   </span>
                 </div>
-                <div id="remediation-editor-code" class="editor-code" role="region" aria-label="Contenido del Dockerfile"></div>
+                <div id="remediation-editor-code" class="editor-code" role="region" aria-label="Contenido del cambio propuesto"></div>
                 <div class="editor-change-summary" aria-label="Resumen del cambio propuesto">
                   <div class="editor-change-card removed">
                     <strong>
                       <span><span aria-hidden="true">−</span> Se elimina</span>
                       <small id="remediation-editor-removed-line">—</small>
                     </strong>
-                    <code id="remediation-editor-removed">Ninguna linea</code>
+                    <code id="remediation-editor-removed">Ninguna línea</code>
                   </div>
                   <div class="editor-change-card added">
                     <strong>
-                      <span><span aria-hidden="true">+</span> Se anade</span>
+                      <span><span aria-hidden="true">+</span> Se añade</span>
                       <small id="remediation-editor-added-line">—</small>
                     </strong>
-                    <code id="remediation-editor-added">Ninguna linea</code>
+                    <code id="remediation-editor-added">Ninguna línea</code>
                   </div>
                 </div>
                 <div class="editor-legend">
@@ -260,7 +261,7 @@
 
   <footer>
     <div class="container">
-      <span>Security Dashboard · Entorno de desarrollo</span>
+      <span>Security Dashboard · Panel local</span>
       <span>Cipriano García Hernández</span>
     </div>
   </footer>

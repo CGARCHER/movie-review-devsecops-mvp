@@ -8,7 +8,7 @@
   --muted: #5d706b;
   --critical: #b42318;
   --high: #dc6803;
-  --medium: #ca8504;
+  --medium: #eaaa08;
   --low: #1570ef;
   --info: #667085;
   --approved: #067647;
@@ -129,13 +129,20 @@ main {
 
 .two-columns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
   gap: 22px;
   margin-bottom: 22px;
 }
 
 .panel {
   padding: 20px;
+}
+
+.chart-description {
+  margin: -10px 0 18px;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .severity-chart {
@@ -165,11 +172,11 @@ main {
 
 .chart-bar {
   height: 100%;
-  min-width: 2px;
   border-radius: 8px;
 }
 
 .chart-bar.critical { background: var(--critical); }
+.chart-bar.unknown { background: var(--info); }
 .chart-bar.high { background: var(--high); }
 .chart-bar.medium { background: var(--medium); }
 .chart-bar.low { background: var(--low); }
@@ -181,7 +188,7 @@ main {
 
 .analysis-data div {
   display: grid;
-  grid-template-columns: 100px 1fr;
+  grid-template-columns: 140px minmax(0, 1fr);
   gap: 12px;
   padding: 8px 0;
   border-bottom: 1px solid #edf1f0;
@@ -419,7 +426,7 @@ tbody tr:hover {
 
 .severity-badge.critical { background: var(--critical); }
 .severity-badge.high, .severity-badge.unknown { background: var(--high); }
-.severity-badge.medium { background: var(--medium); }
+.severity-badge.medium { background: var(--medium); color: #18312b; }
 .severity-badge.low { background: var(--low); }
 .severity-badge.info { background: var(--info); }
 
