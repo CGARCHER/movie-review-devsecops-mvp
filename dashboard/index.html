@@ -24,11 +24,6 @@
   </header>
 
   <main class="container">
-    <p class="notice">
-      El estado representa el resultado de la política definida para el proyecto.
-      No constituye una garantía absoluta de seguridad.
-    </p>
-
     <section class="summary-grid" aria-label="Resumen de seguridad">
       <article id="status-card" class="card status-card">
         <span class="card-label">Estado de seguridad</span>
@@ -75,6 +70,12 @@
           <div><dt>Problemas únicos</dt><dd id="analysis-unique">—</dd></div>
           <div><dt>Componentes afectados</dt><dd id="analysis-components">—</dd></div>
         </dl>
+        <div class="analyzer-overview">
+          <h3>Tecnolog&iacute;as del an&aacute;lisis</h3>
+          <div id="analyzer-status-list" class="analyzer-status-list">
+            <p class="empty-message">Estado no disponible.</p>
+          </div>
+        </div>
         <a id="workflow-link" class="workflow-link hidden" href="#" target="_blank" rel="noreferrer">
           Abrir ejecución en GitHub
         </a>
@@ -110,6 +111,7 @@
             <option value="MEDIUM">MEDIUM</option>
             <option value="LOW">LOW</option>
             <option value="INFO">INFO</option>
+            <option value="UNKNOWN">UNKNOWN</option>
           </select>
         </label>
       </div>
@@ -133,19 +135,23 @@
           </tbody>
         </table>
       </div>
+      <nav class="pagination" aria-label="Paginación de hallazgos">
+        <button id="previous-page" type="button">Anterior</button>
+        <span id="page-information">Página 1 de 1</span>
+        <button id="next-page" type="button">Siguiente</button>
+      </nav>
     </section>
 
-    <section class="panel remediation-panel">
+    <section id="remediation-panel" class="panel remediation-panel">
       <div class="section-heading">
         <div>
           <h2>Remediación asistida por IA</h2>
-          <p>Selecciona un hallazgo para solicitar una explicación educativa.</p>
         </div>
         <span id="remediation-status" class="remediation-status" aria-live="polite"></span>
       </div>
       <div id="remediation-content" class="remediation-content" aria-live="polite">
         <p id="remediation-empty" class="remediation-empty">
-          Selecciona un hallazgo y pulsa &laquo;Explicar con IA&raquo; para ver una orientaci&oacute;n.
+          Selecciona un hallazgo en la tabla para consultar c&oacute;mo corregirlo.
         </p>
         <article id="remediation-result" class="remediation-result hidden">
           <div class="remediation-finding">
@@ -157,25 +163,93 @@
           </div>
           <div class="remediation-grid">
             <section class="remediation-card">
-              <h3>1. Qu&eacute; ocurre</h3>
+              <h3>1. Entiende el problema</h3>
               <p id="remediation-explanation">-</p>
             </section>
-            <section class="remediation-card">
-              <h3>2. Qu&eacute; hacer</h3>
+            <section class="remediation-card remediation-patch-card">
+              <div class="patch-heading">
+                <h3>2. Revisa y aplica el cambio</h3>
+                <span id="remediation-confidence" class="confidence-badge">-</span>
+              </div>
               <p id="remediation-recommendation">-</p>
+              <p id="remediation-patch-file" class="patch-file">-</p>
+              <p id="remediation-patch-reason" class="hidden">-</p>
+              <div id="remediation-editor" class="editor-window hidden" aria-label="Fichero abierto en modo simulacion">
+                <div class="editor-window-bar">
+                  <div class="window-controls" aria-hidden="true">
+                    <span class="window-control close"></span>
+                    <span class="window-control minimize"></span>
+                    <span class="window-control maximize"></span>
+                  </div>
+                  <div class="editor-tab">
+                    <span class="editor-tab-icon">[]</span>
+                    <strong id="remediation-editor-tab">Dockerfile</strong>
+                    <span class="editor-tab-close">x</span>
+                  </div>
+                  <span class="editor-mode">solo lectura</span>
+                </div>
+                <div class="editor-toolbar">
+                  <span class="editor-breadcrumb">
+                    project <b>/</b> <strong id="remediation-editor-file">Dockerfile</strong>
+                    <em id="remediation-editor-location">Linea pendiente</em>
+                  </span>
+                  <span class="editor-toolbar-status">
+                    <span class="editor-status-dot"></span>
+                    <span id="remediation-editor-status">cambio sugerido</span>
+                  </span>
+                </div>
+                <div id="remediation-editor-code" class="editor-code" role="region" aria-label="Contenido del Dockerfile"></div>
+                <div class="editor-change-summary" aria-label="Resumen del cambio propuesto">
+                  <div class="editor-change-card removed">
+                    <strong>
+                      <span><span aria-hidden="true">−</span> Se elimina</span>
+                      <small id="remediation-editor-removed-line">—</small>
+                    </strong>
+                    <code id="remediation-editor-removed">Ninguna linea</code>
+                  </div>
+                  <div class="editor-change-card added">
+                    <strong>
+                      <span><span aria-hidden="true">+</span> Se anade</span>
+                      <small id="remediation-editor-added-line">—</small>
+                    </strong>
+                    <code id="remediation-editor-added">Ninguna linea</code>
+                  </div>
+                </div>
+                <div class="editor-legend">
+                  <span><i class="legend-swatch removed"></i> contenido actual</span>
+                  <span><i class="legend-swatch added"></i> cambio propuesto</span>
+                </div>
+              </div>
+              <div id="remediation-change" class="remediation-change hidden">
+                <div id="remediation-before-box" class="change-before">
+                  <strong id="remediation-before-title">Localiza este contenido</strong>
+                  <pre><code id="remediation-before"></code></pre>
+                </div>
+                <div id="remediation-after-box" class="change-after">
+                  <strong id="remediation-after-title">Sustitúyelo por</strong>
+                  <pre><code id="remediation-after"></code></pre>
+                </div>
+              </div>
+              <details id="remediation-diff" class="remediation-diff hidden">
+                <summary>Ver diferencia técnica</summary>
+                <pre id="remediation-patch-code" class="patch-code"><code></code></pre>
+              </details>
+              <div id="remediation-warnings" class="remediation-warnings hidden">
+                <strong>Antes de cambiarlo</strong>
+                <ul id="remediation-warning-list"></ul>
+              </div>
             </section>
             <section class="remediation-card">
-              <h3>3. C&oacute;mo validarlo</h3>
+              <h3>3. Comprueba la soluci&oacute;n</h3>
               <p id="remediation-validation">-</p>
             </section>
-            <section class="remediation-card">
-              <h3>4. Qu&eacute; aprender</h3>
-              <p id="remediation-learning">-</p>
-            </section>
           </div>
+          <section class="remediation-learning-box">
+            <strong>Idea clave</strong>
+            <p id="remediation-learning">-</p>
+          </section>
           <p class="remediation-note">
-            La IA propone una orientaci&oacute;n educativa. Revisa la recomendaci&oacute;n antes de aplicarla;
-            no se modifica el c&oacute;digo ni se ejecutan comandos autom&aacute;ticamente.
+            La propuesta no modifica el proyecto. Comprueba el cambio y apl&iacute;calo manualmente.
           </p>
         </article>
       </div>

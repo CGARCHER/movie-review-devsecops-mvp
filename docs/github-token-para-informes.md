@@ -1,6 +1,6 @@
 # Token de GitHub para descargar informes
 
-El contenedor `report-downloader` necesita acceder a los artefactos de GitHub
+El contenedor `security-dashboard` necesita acceder a los artefactos de GitHub
 Actions porque el repositorio es privado.
 
 ## Permisos mínimos
@@ -26,31 +26,21 @@ la imagen.
 
 ## Descargar el último informe
 
-En Windows se puede ejecutar:
-
-```text
-download_security_report.cmd
-```
-
-También se puede utilizar Docker Compose directamente:
+La descarga se realiza automáticamente al levantar el entorno local:
 
 ```bash
-docker compose -f compose.reports.yml run --rm --build report-downloader
+docker compose -f compose.local.yml up --build
 ```
+
+Después, la descarga puede repetirse desde el botón `Actualizar datos` del
+dashboard.
 
 Los informes se guardan en `reports/runs/<SHA>`. El fichero `reports/LATEST`
 indica cuál ha sido la última carpeta descargada.
 
-## Descargar y abrir el dashboard
+## Abrir el dashboard
 
-En Windows basta con ejecutar:
-
-```text
-security_dashboard.cmd
-```
-
-Este lanzador descarga el último informe, construye el contenedor del
-dashboard, lo inicia y abre:
+El dashboard se inicia con el mismo Docker Compose y queda disponible en:
 
 ```text
 http://localhost:8081

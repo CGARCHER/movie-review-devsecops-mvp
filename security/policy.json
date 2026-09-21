@@ -1,6 +1,6 @@
 {
   "blockOn": ["CRITICAL"],
-  "requireReviewOn": ["HIGH"],
+  "requireReviewOn": ["HIGH", "UNKNOWN"],
   "allowOn": ["MEDIUM", "LOW", "INFO"],
   "exceptionsRequireJustification": true,
   "exceptionsRequireExpiration": true

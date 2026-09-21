@@ -22,7 +22,7 @@ services:
 
   app:
     build: .
-    image: movie-review:local
+    image: movie-review:dev
     expose:
       - "8080"
     environment:
@@ -36,8 +36,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64m,noexec,nosuid
-    cap_drop:
-      - ALL
+    cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -48,8 +47,39 @@ services:
           cpus: "1.0"
           memory: 512M
 
+  security-dashboard:
+    build:
+      context: .
+      dockerfile: docker/security-dashboard/Dockerfile
+    image: movie-review-security-dashboard:dev
+    expose:
+      - "8080"
+    environment:
+      GITHUB_REPOSITORY: CGARCHER/movie-review-devsecops-mvp
+      GITHUB_WORKFLOW_FILE: security.yml
+      GITHUB_BRANCH: develop
+      GH_TOKEN: ${GH_TOKEN:?Define GH_TOKEN en Dokploy}
+      REPORT_ROOT: /workspace/reports
+      AI_REMEDIATION_ENABLED: "false"
+    volumes:
+      - security-reports:/workspace/reports
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 networks:
   backend:
 
 volumes:
   movie-data:
+  security-reports:

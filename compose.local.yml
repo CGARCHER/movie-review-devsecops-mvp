@@ -31,8 +31,51 @@ services:
         condition: service_healthy
     networks: [backend]
 
+  security-dashboard:
+    build:
+      context: .
+      dockerfile: docker/security-dashboard/Dockerfile
+    image: movie-review-security-dashboard:local
+    ports:
+      - "127.0.0.1:8081:8080"
+    environment:
+      GITHUB_REPOSITORY: CGARCHER/movie-review-devsecops-mvp
+      GITHUB_WORKFLOW_FILE: security.yml
+      GITHUB_BRANCH: ${GITHUB_BRANCH:-develop}
+      GH_TOKEN_FILE: /run/secrets/github_token
+      REPORT_ROOT: /workspace/reports
+      SOURCE_ROOT: /workspace/source
+      AI_REMEDIATION_ENABLED: "true"
+      AI_API_URL: ${AI_API_URL:-https://ai-api.cgarcher.dev/api/v1/remediations}
+      AI_API_TOKEN_FILE: /run/secrets/ai_api_token
+    secrets:
+      - github_token
+      - ai_api_token
+    volumes:
+      - ./reports:/workspace/reports
+      - ./pom.xml:/workspace/source/pom.xml:ro
+      - ./Dockerfile:/workspace/source/Dockerfile:ro
+      - ./src:/workspace/source/src:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 networks:
   backend:
 
 volumes:
   movie-data:
+
+secrets:
+  github_token:
+    file: ./.secrets/github_token.txt
+  ai_api_token:
+    file: ./.secrets/ai_api_token.txt

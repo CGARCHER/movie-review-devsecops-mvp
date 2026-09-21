@@ -1,19 +1,36 @@
+# Maven
 target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Entornos de desarrollo
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.classpath
+.project
+.settings/
+.springBeans
+.sts4-cache/
+.apt_generated/
+.factorypath
+
+# Configuracion local y resultados generados
+.env
+.secrets/
 reports/
 data/
-.env
-.idea/
-.vscode/
-*.iml
 .docker-config/
-.secrets/
+*.log
 
-# Ficheros temporales de Python
+# Archivos temporales generados por los scripts auxiliares
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Documentacion y ficheros de trabajo locales del TFM
-work/
-*.docx
-~$*
+# Sistema operativo
+.DS_Store
+Thumbs.db

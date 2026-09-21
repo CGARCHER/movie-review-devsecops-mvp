@@ -10,21 +10,34 @@ on:
         options: [staging, production]
 
 permissions:
-  contents: read
+  contents: write
   actions: read
+  pull-requests: read
 
 concurrency:
-  group: movie-deploy-${{ inputs.environment }}
+  group: spring-boot-deploy-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    timeout-minutes: 20
     steps:
-      - name: Verificar seguridad antes de producción
+      - name: Limitar producción a main
+        env:
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          if [ "$DEPLOY_ENVIRONMENT" = "production" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Producción solo se despliega desde main."
+            exit 1
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Buscar el último análisis de main
         id: security-run
-        if: inputs.environment == 'production'
+        if: github.ref == 'refs/heads/main'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
@@ -33,52 +46,82 @@ jobs:
               repo: context.repo.repo,
               workflow_id: 'security.yml',
               head_sha: context.sha,
-              status: 'completed',
               per_page: 10
             });
 
             const run = result.data.workflow_runs
-              .filter(item => item.conclusion !== null)
+              .filter(item => item.head_branch === 'main' && item.event !== 'pull_request')
               .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
 
             if (!run) {
-              core.setFailed(`No existe un análisis de seguridad completado para el commit ${context.sha}.`);
-            } else if (run.conclusion !== 'success') {
-              core.setFailed(`El análisis de seguridad no está aprobado: ${run.conclusion}. Ejecución: ${run.html_url}`);
+              core.setFailed(`No existe un análisis de seguridad para el commit ${context.sha}.`);
+            } else if (run.status !== 'completed' || !['success', 'failure'].includes(run.conclusion)) {
+              core.setFailed(`El último análisis no terminó correctamente: ${run.html_url}`);
             } else {
               core.setOutput('run-id', String(run.id));
-              core.info(`Análisis de seguridad aprobado: ${run.html_url}`);
+              // Un resultado rojo puede deberse a hallazgos que el responsable acepte.
+              core.info(`Análisis que se va a revisar: ${run.html_url}`);
             }
       - name: Descargar decisión de seguridad
-        if: inputs.environment == 'production'
+        if: github.ref == 'refs/heads/main'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: movie-security-report-${{ github.sha }}
+          name: spring-boot-security-report-${{ github.sha }}
           path: security-report
           repository: ${{ github.repository }}
           run-id: ${{ steps.security-run.outputs.run-id }}
           github-token: ${{ github.token }}
-      - name: Exigir estado APPROVED
-        if: inputs.environment == 'production'
-        shell: bash
+      - name: Comprobar el informe y la aceptación del riesgo
+        if: github.ref == 'refs/heads/main'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          SECURITY_RUN_ID: ${{ steps.security-run.outputs.run-id }}
+        with:
+          script: |
+            const authorize = require('./scripts/authorize_deployment.cjs');
+            await authorize({github, context, core, runId: Number(process.env.SECURITY_RUN_ID)});
+      - name: Comprobar configuracion
+        env:
+          DOKPLOY_URL: ${{ vars.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_COMPOSE_ID: ${{ vars.DOKPLOY_COMPOSE_ID }}
+          DEPLOY_HEALTH_URL: ${{ vars.DEPLOY_HEALTH_URL }}
         run: |
-          DECISION="$(find security-report -name decision.json -print -quit)"
-          if [ -z "$DECISION" ]; then
-            echo "No se encuentra decision.json en el informe de seguridad."
+          test -n "$DOKPLOY_URL"
+          test -n "$DOKPLOY_API_KEY"
+          test -n "$DOKPLOY_COMPOSE_ID"
+          test -n "$DEPLOY_HEALTH_URL"
+      - name: Desplegar el commit y esperar a Dokploy
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          DOKPLOY_URL: ${{ vars.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_COMPOSE_ID: ${{ vars.DOKPLOY_COMPOSE_ID }}
+        with:
+          script: |
+            const deploy = require('./scripts/deploy_dokploy.cjs');
+            await deploy({github, context, core});
+      - name: Comprobar que la aplicación responde
+        shell: bash
+        env:
+          DEPLOY_HEALTH_URL: ${{ vars.DEPLOY_HEALTH_URL }}
+        run: |
+          if [ -z "$DEPLOY_HEALTH_URL" ]; then
+            echo "Falta la variable DEPLOY_HEALTH_URL en el entorno ${{ inputs.environment }}."
             exit 1
           fi
 
-          STATUS="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("status", "UNKNOWN"))' "$DECISION")"
-          echo "Estado de la política para ${{ github.sha }}: $STATUS"
-          if [ "$STATUS" != "APPROVED" ]; then
-            echo "Producción requiere un estado APPROVED."
-            exit 1
-          fi
-      - name: Comprobar configuracion
-        env:
-          DOKPLOY_DEPLOY_WEBHOOK: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}
-        run: test -n "$DOKPLOY_DEPLOY_WEBHOOK"
-      - name: Solicitar despliegue
-        env:
-          DOKPLOY_DEPLOY_WEBHOOK: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}
-        run: curl --fail-with-body --silent --show-error --retry 3 -X POST "$DOKPLOY_DEPLOY_WEBHOOK"
+          echo "Dokploy ha terminado. Comprobando la disponibilidad de la aplicación..."
+
+          for intento in $(seq 1 12); do
+            echo "Comprobación $intento de 12: $DEPLOY_HEALTH_URL"
+            if curl --fail --silent --max-time 10 "$DEPLOY_HEALTH_URL" \
+              | grep -Eq '"status"[[:space:]]*:[[:space:]]*"UP"'; then
+              echo "La aplicación está disponible y comunica el estado UP."
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "La aplicación no ha comunicado el estado UP después del despliegue."
+          exit 1

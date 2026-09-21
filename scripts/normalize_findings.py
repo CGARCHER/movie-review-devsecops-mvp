@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normaliza resultados de Semgrep, Dependency-Check y Trivy.
+"""Normaliza resultados de Semgrep y Trivy para SAST, SCA y contenedores.
 
 No utiliza dependencias externas para poder ejecutarse en GitHub Actions o
 localmente. Los ficheros ausentes se ignoran, lo que permite ejecutar cada
@@ -12,7 +12,6 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
 
 
 SEVERITY_MAP = {
@@ -20,7 +19,7 @@ SEVERITY_MAP = {
     "WARNING": "MEDIUM",
     "WARN": "MEDIUM",
     "NOTE": "LOW",
-    "UNKNOWN": "INFO",
+    "UNKNOWN": "UNKNOWN",
 }
 
 
@@ -31,19 +30,10 @@ def load(path: Path) -> dict[str, Any]:
 
 
 def normalized_severity(value: str | None) -> str:
-    value = (value or "UNKNOWN").upper()
+    value = value.strip().upper() if isinstance(value, str) else "UNKNOWN"
     if value in {"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"}:
         return value
-    return SEVERITY_MAP.get(value, "INFO")
-
-
-def dependency_version(dependency: dict[str, Any]) -> str | None:
-    """Obtiene la versión desde el Package URL generado por Dependency-Check."""
-    for package in dependency.get("packages", []) or []:
-        package_id = package.get("id", "")
-        if "@" in package_id:
-            return unquote(package_id.rsplit("@", 1)[1].split("?", 1)[0])
-    return None
+    return SEVERITY_MAP.get(value, "UNKNOWN")
 
 
 def semgrep_findings(data: dict[str, Any], commit: str) -> list[dict[str, Any]]:
@@ -68,36 +58,21 @@ def semgrep_findings(data: dict[str, Any], commit: str) -> list[dict[str, Any]]:
     return findings
 
 
-def dependency_check_findings(data: dict[str, Any], commit: str) -> list[dict[str, Any]]:
-    findings = []
-    for dependency in data.get("dependencies", []):
-        for vulnerability in dependency.get("vulnerabilities", []) or []:
-            findings.append({
-                "id": vulnerability.get("name", "dependency-check-unknown"),
-                "tool": "dependency-check",
-                "category": "SCA",
-                "severity": normalized_severity(vulnerability.get("severity")),
-                "component": dependency.get("fileName"),
-                "version": dependency_version(dependency),
-                "fixedVersion": None,
-                "file": dependency.get("filePath"),
-                "line": None,
-                "description": vulnerability.get("description"),
-                "cwe": vulnerability.get("cwes", []),
-                "references": [r.get("url") for r in vulnerability.get("references", []) if r.get("url")],
-                "commit": commit,
-            })
-    return findings
-
-
-def trivy_findings(data: dict[str, Any], commit: str) -> list[dict[str, Any]]:
+def trivy_findings(
+    data: dict[str, Any],
+    commit: str,
+    *,
+    category: str = "CONTAINER",
+    tool: str = "trivy",
+) -> list[dict[str, Any]]:
     findings = []
     for result in data.get("Results", []) or []:
         for vulnerability in result.get("Vulnerabilities", []) or []:
             findings.append({
                 "id": vulnerability.get("VulnerabilityID", "trivy-unknown"),
-                "tool": "trivy",
-                "category": "CONTAINER",
+                "tool": tool,
+                "category": category,
+                "packageType": result.get("Type"),
                 "severity": normalized_severity(vulnerability.get("Severity")),
                 "component": vulnerability.get("PkgName"),
                 "version": vulnerability.get("InstalledVersion"),
@@ -127,10 +102,9 @@ def deduplicate(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def issue_key(finding: dict[str, Any]) -> tuple[Any, ...]:
-    """Agrupa instancias que requieren esencialmente la misma remediación."""
+    """Agrupa una vulnerabilidad aunque la detecten varias superficies."""
     return (
         finding.get("id"),
-        finding.get("category"),
         finding.get("component"),
         finding.get("version"),
         finding.get("fixedVersion"),
@@ -138,7 +112,7 @@ def issue_key(finding: dict[str, Any]) -> tuple[Any, ...]:
 
 
 def summarize(findings: list[dict[str, Any]]) -> dict[str, Any]:
-    counts = {level: 0 for level in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")}
+    counts = {level: 0 for level in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO", "UNKNOWN")}
     unique_counts = counts.copy()
     unique_issues: dict[tuple[Any, ...], dict[str, Any]] = {}
     affected_components: set[str] = set()
@@ -167,8 +141,7 @@ def summarize(findings: list[dict[str, Any]]) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--semgrep", type=Path, default=Path("reports/sast/semgrep.json"))
-    parser.add_argument("--dependency-check", type=Path,
-                        default=Path("reports/sca/dependency-check-report.json"))
+    parser.add_argument("--sca", type=Path, default=Path("reports/sca/trivy-sca.json"))
     parser.add_argument("--trivy", type=Path, default=Path("reports/container/trivy.json"))
     parser.add_argument("--commit", default="local")
     parser.add_argument("--output", type=Path, default=Path("reports/normalized/findings.json"))
@@ -176,7 +149,12 @@ def main() -> None:
 
     findings = []
     findings.extend(semgrep_findings(load(args.semgrep), args.commit))
-    findings.extend(dependency_check_findings(load(args.dependency_check), args.commit))
+    findings.extend(trivy_findings(
+        load(args.sca),
+        args.commit,
+        category="SCA",
+        tool="trivy-sca",
+    ))
     findings.extend(trivy_findings(load(args.trivy), args.commit))
     findings = deduplicate(findings)
 
