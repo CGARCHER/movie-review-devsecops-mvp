@@ -1,6 +1,6 @@
 # Despliegue en Dokploy
 
-El workflow manual despliega producción desde main. Comprueba el informe del commit y, si hay riesgo, la aceptación del responsable en la PR. Crea una etiqueta `deploy-<SHA>` para identificar el commit y nunca mueve una etiqueta existente. Dokploy construye el código de esa etiqueta con `compose.main.yml`.
+El workflow manual despliega producción desde main. Comprueba el informe del commit y, si hay riesgo, la casilla de aceptación del responsable. Crea una etiqueta `deploy-<SHA>` para identificar el commit y nunca mueve una etiqueta existente. Dokploy construye el código de esa etiqueta con `compose.main.yml`.
 
 Después, el workflow espera el resultado de su propia solicitud de despliegue. Solo cuando Dokploy comunica `done` comprueba que la aplicación responde con `UP`. Un despliegue antiguo no sirve como confirmación.
 
@@ -27,7 +27,7 @@ El permiso `contents: write` del workflow permite crear la etiqueta. Protege las
 
 1. Sube los cambios del repositorio y comprueba los nombres de servicios, el volumen de datos y las variables del Compose antes de sustituir una configuración antigua.
 2. Revisa el informe en los checks de la PR y fusiona los cambios conforme a las reglas del repositorio. Espera al análisis del commit final de main.
-3. Si la decisión es `REVIEW_REQUIRED` o `BLOCKED`, registra la aceptación como se indica debajo. Con `APPROVED` no hace falta esa aceptación adicional.
+3. Si la decisión es `REVIEW_REQUIRED` o `BLOCKED`, marca «Acepto los hallazgos del análisis» al lanzar el despliegue. Con `APPROVED` no hace falta esa aceptación adicional.
 4. Ejecuta `Deploy to Dokploy` desde main y selecciona `production`.
 5. Comprueba el resultado del workflow y el registro correspondiente en Dokploy.
 
@@ -35,19 +35,11 @@ Si se agota la espera, consulta Dokploy antes de repetir la solicitud: el despli
 
 ## Aceptación del riesgo
 
-La persona que fusionó la PR es la responsable de autorizar el despliegue con hallazgos. Puede ser el propio autor si trabaja solo. En equipo, las revisiones previas se configuran con las reglas de GitHub.
+Después de consultar el análisis del commit final de main, abre **Actions → Deploy to Dokploy → Run workflow**. Selecciona main y el entorno. Si decides continuar con los hallazgos, marca **Acepto los hallazgos del análisis** y ejecuta el workflow. La casilla está desmarcada por defecto.
 
-Después de consultar el análisis del commit final de main, añade un comentario nuevo en la PR fusionada:
+No hace falta escribir comentarios ni copiar el SHA. GitHub limita la ejecución manual a personas con permisos en el repositorio. El resumen registra quién lanzó la ejecución, el commit y el resultado del análisis. En equipo, las revisiones de la PR se configuran con las reglas de GitHub.
 
-```text
-Acepto el riesgo de SHA_COMPLETO: justificación y fecha prevista de revisión.
-```
-
-Sustituye `SHA_COMPLETO` por los 40 caracteres del commit mostrado en el informe y escribe una justificación concreta. Se comprueba el prefijo, el SHA y que exista una justificación; su contenido y la fecha de revisión los valora el responsable.
-
-Se pide el commit final porque una fusión puede crear un SHA diferente al de la rama de trabajo. La autorización debe ser posterior al último análisis de ese commit. Si se repite el análisis, se añaden cambios o se edita el comentario, hay que añadir una aceptación nueva. El comentario debe pertenecer a quien fusionó la PR y esa persona debe conservar permisos de escritura.
-
-El workflow enlaza la aceptación en su resumen y conserva el resultado original del informe. Los errores técnicos, los informes ausentes y los analizadores que no terminaron correctamente detienen el despliegue incluso cuando existe una aceptación.
+Los errores técnicos, los informes ausentes y los analizadores fallidos detienen el despliegue aunque se marque la casilla. La aceptación conserva los hallazgos y su estado original.
 
 ## Código
 

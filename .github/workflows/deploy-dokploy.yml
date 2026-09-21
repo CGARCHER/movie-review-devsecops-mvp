@@ -8,11 +8,14 @@ on:
         required: true
         type: choice
         options: [staging, production]
+      accept_risk:
+        description: Acepto los hallazgos del análisis
+        type: boolean
+        default: false
 
 permissions:
   contents: write
   actions: read
-  pull-requests: read
 
 concurrency:
   group: spring-boot-deploy-${{ github.repository }}
@@ -75,11 +78,12 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
+          ACCEPT_RISK: ${{ inputs.accept_risk }}
           SECURITY_RUN_ID: ${{ steps.security-run.outputs.run-id }}
         with:
           script: |
             const authorize = require('./scripts/authorize_deployment.cjs');
-            await authorize({github, context, core, runId: Number(process.env.SECURITY_RUN_ID)});
+            await authorize({github, context, core, runId: Number(process.env.SECURITY_RUN_ID), acceptRisk: process.env.ACCEPT_RISK === 'true'});
       - name: Comprobar configuracion
         env:
           DOKPLOY_URL: ${{ vars.DOKPLOY_URL }}
