@@ -25,6 +25,10 @@ jobs:
           python-version: "3.13"
       - name: Probar normalización y política
         run: python -m unittest discover -s tests -v
+      - name: Probar autorización y despliegue
+        run: |
+          node --test tests/test_authorize_deployment.cjs
+          node tests/test_deploy_dokploy.cjs
 
   build-test:
     runs-on: ubuntu-latest

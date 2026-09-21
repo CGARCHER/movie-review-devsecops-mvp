@@ -9,8 +9,8 @@ imagen para el contenedor.
 | Estado | Significado | Producción |
 |---|---|---|
 | `APPROVED` | Todos los informes son válidos y no hay severidades bloqueantes o sujetas a revisión. | Permitida |
-| `REVIEW_REQUIRED` | Existen hallazgos altos que requieren revisión. | No permitida |
-| `BLOCKED` | Existe al menos un hallazgo crítico. | No permitida |
+| `REVIEW_REQUIRED` | Existen hallazgos altos o de gravedad desconocida. | Requiere aceptación del riesgo |
+| `BLOCKED` | Existe al menos un hallazgo crítico. | Requiere aceptación del riesgo |
 | `ANALYSIS_ERROR` | Falta un informe o su estructura no es válida. | No permitida |
 
 ## Comportamiento fail-safe
@@ -45,15 +45,22 @@ paso aplica la puerta de seguridad:
 - `APPROVED` permite que producción consulte y acepte el informe.
 
 Por tanto, un `aggregate` rojo con el mensaje "Despliegue bloqueado por la
-política" indica que el control funcionó. No equivale a un fallo del motor de
-análisis.
+política" indica que se han detectado hallazgos críticos. Este resultado es
+informativo en la PR y requiere una aceptación expresa antes de desplegar.
+La autorización humana se registra por separado y conserva el estado del informe.
 
 ## Promoción entre entornos
 
 - Local: se permite trabajar con cualquier estado.
-- Staging: puede utilizarse para pruebas controladas.
-- Producción: requiere una decisión `APPROVED` asociada exactamente al commit
-  que se pretende desplegar.
+- Staging: puede utilizarse para pruebas controladas. Si despliega main, aplica
+  las mismas comprobaciones del informe y la aceptación del riesgo.
+- Producción: utiliza main y requiere un análisis completo del commit. Con
+  `APPROVED` puede continuar; con `REVIEW_REQUIRED` o `BLOCKED`, la persona que
+  fusionó la PR debe registrar su aceptación y justificación para ese commit.
+
+El comentario debe ser posterior al último análisis y a la fusión. Un cambio
+de commit o un nuevo análisis exige revisar la aceptación. El formato y los
+pasos están en [Despliegue en Dokploy](despliegue-dokploy.md).
 
 La remediación mediante IA es informativa y solo está habilitada en el entorno
 local. Puede explicar un hallazgo y proponer un cambio para que lo revise el

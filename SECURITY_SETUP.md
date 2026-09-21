@@ -32,6 +32,10 @@ Los dos rulesets:
 - Exigen realizar los cambios mediante una pull request.
 - Exigen que terminen correctamente los checks `security-script-tests`, `build-test` y `docker-build`.
 
+La configuración incluye cero revisiones externas obligatorias para permitir el trabajo individual. En un equipo se puede exigir una revisión y configurar los responsables del código. La plantilla de main apunta a esa rama por su nombre y descarta las aprobaciones anteriores cuando se añaden cambios. Para aplicar una plantilla modificada hay que actualizar también la regla en GitHub.
+
+El análisis de vulnerabilidades se consulta desde los checks de la PR. `aggregate` no es un requisito de fusión: los hallazgos permiten una decisión humana. Antes de desplegar main se comprueba el informe completo y, cuando hay riesgo, su aceptación por la persona que fusionó la PR. El procedimiento está en [Despliegue en Dokploy](docs/despliegue-dokploy.md).
+
 ## 4. Comprobar el funcionamiento
 
 Crea una rama `feature/*` y abre una pull request hacia `develop`. GitHub debe ejecutar los checks obligatorios antes de permitir la integración.

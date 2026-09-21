@@ -12,6 +12,7 @@ on:
 permissions:
   contents: write
   actions: read
+  pull-requests: read
 
 concurrency:
   group: spring-boot-deploy-${{ github.repository }}
@@ -23,9 +24,20 @@ jobs:
     environment: ${{ inputs.environment }}
     timeout-minutes: 20
     steps:
-      - name: Verificar seguridad antes de producción
+      - name: Limitar producción a main
+        env:
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          if [ "$DEPLOY_ENVIRONMENT" = "production" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Producción solo se despliega desde main."
+            exit 1
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Buscar el último análisis de main
         id: security-run
-        if: inputs.environment == 'production'
+        if: github.ref == 'refs/heads/main'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
@@ -34,24 +46,24 @@ jobs:
               repo: context.repo.repo,
               workflow_id: 'security.yml',
               head_sha: context.sha,
-              status: 'completed',
               per_page: 10
             });
 
             const run = result.data.workflow_runs
-              .filter(item => item.conclusion !== null)
+              .filter(item => item.head_branch === 'main' && item.event !== 'pull_request')
               .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
 
             if (!run) {
-              core.setFailed(`No existe un análisis de seguridad completado para el commit ${context.sha}.`);
-            } else if (run.conclusion !== 'success') {
-              core.setFailed(`El análisis de seguridad no está aprobado: ${run.conclusion}. Ejecución: ${run.html_url}`);
+              core.setFailed(`No existe un análisis de seguridad para el commit ${context.sha}.`);
+            } else if (run.status !== 'completed' || !['success', 'failure'].includes(run.conclusion)) {
+              core.setFailed(`El último análisis no terminó correctamente: ${run.html_url}`);
             } else {
               core.setOutput('run-id', String(run.id));
-              core.info(`Análisis de seguridad aprobado: ${run.html_url}`);
+              // Un resultado rojo puede deberse a hallazgos que el responsable acepte.
+              core.info(`Análisis que se va a revisar: ${run.html_url}`);
             }
       - name: Descargar decisión de seguridad
-        if: inputs.environment == 'production'
+        if: github.ref == 'refs/heads/main'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: spring-boot-security-report-${{ github.sha }}
@@ -59,22 +71,15 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ steps.security-run.outputs.run-id }}
           github-token: ${{ github.token }}
-      - name: Exigir estado APPROVED
-        if: inputs.environment == 'production'
-        shell: bash
-        run: |
-          DECISION="$(find security-report -name decision.json -print -quit)"
-          if [ -z "$DECISION" ]; then
-            echo "No se encuentra decision.json en el informe de seguridad."
-            exit 1
-          fi
-
-          STATUS="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("status", "UNKNOWN"))' "$DECISION")"
-          echo "Estado de la política para ${{ github.sha }}: $STATUS"
-          if [ "$STATUS" != "APPROVED" ]; then
-            echo "Producción requiere un estado APPROVED."
-            exit 1
-          fi
+      - name: Comprobar el informe y la aceptación del riesgo
+        if: github.ref == 'refs/heads/main'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          SECURITY_RUN_ID: ${{ steps.security-run.outputs.run-id }}
+        with:
+          script: |
+            const authorize = require('./scripts/authorize_deployment.cjs');
+            await authorize({github, context, core, runId: Number(process.env.SECURITY_RUN_ID)});
       - name: Comprobar configuracion
         env:
           DOKPLOY_URL: ${{ vars.DOKPLOY_URL }}
@@ -86,9 +91,6 @@ jobs:
           test -n "$DOKPLOY_API_KEY"
           test -n "$DOKPLOY_COMPOSE_ID"
           test -n "$DEPLOY_HEALTH_URL"
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
       - name: Desplegar el commit y esperar a Dokploy
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
