@@ -12,7 +12,5 @@ Si hay vulnerabilidades, explica cuáles se corrigen o se propone aceptar, el mo
 
 La revisión puede realizarla el propio responsable si trabaja solo, u otra persona si las reglas del equipo lo exigen.
 
-<!-- Si el análisis del commit final de main requiere aceptar riesgos, quien fusionó
-la PR debe añadir aquí un comentario nuevo tras consultar ese análisis:
-Acepto el riesgo de SHA_COMPLETO: justificación y fecha de revisión.
-El formato y los pasos se explican en docs/despliegue-dokploy.md. -->
+<!-- Si el análisis final requiere aceptar riesgos, marca la casilla al lanzar el despliegue.
+Los pasos se explican en docs/despliegue-dokploy.md. -->
