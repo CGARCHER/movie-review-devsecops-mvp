@@ -1,7 +1,7 @@
 # Token de GitHub para descargar informes
 
 El contenedor `security-dashboard` necesita acceder a los artefactos de GitHub
-Actions porque el repositorio es privado.
+Actions para descargar los informes del repositorio.
 
 ## Permisos mínimos
 
@@ -12,17 +12,18 @@ Crea un token de acceso personal de grano fino limitado al repositorio:
 Permisos del repositorio:
 
 - `Actions: Read`
+- `Contents: Read`
 - `Metadata: Read`
 
 ## Guardar el token
 
-1. Crea la carpeta `.secrets` en la raíz del proyecto.
-2. Crea dentro el fichero `.secrets/github_token.txt`.
-3. Pega únicamente el valor del token, sin comillas.
+1. Copia `.devsecops/dashboard.env.example` como `.devsecops/dashboard.env`.
+2. Indica el repositorio y la rama que quieres consultar.
+3. Escribe el token en `GH_TOKEN`, sin comillas.
 
-La carpeta `.secrets` está excluida de Git y del contexto de construcción de
-Docker. El token se monta en el contenedor como un secreto y no se incorpora a
-la imagen.
+El fichero real está excluido de Git y se monta en modo de solo lectura.
+No se incorpora a la imagen. La configuración completa se explica en
+[la guía del panel](devsecops/dashboard.md).
 
 ## Descargar el último informe
 
@@ -32,10 +33,10 @@ La descarga se realiza automáticamente al levantar el entorno local:
 docker compose -f compose.local.yml up --build
 ```
 
-Después, la descarga puede repetirse desde el botón `Actualizar datos` del
+Después, la descarga puede repetirse desde el botón **Buscar último informe** del
 dashboard.
 
-Los informes se guardan en `reports/runs/<SHA>`. El fichero `reports/LATEST`
+Los informes se guardan en `reports/runs/<SHA>-run-<ID>`. El fichero `reports/LATEST`
 indica cuál ha sido la última carpeta descargada.
 
 ## Abrir el dashboard

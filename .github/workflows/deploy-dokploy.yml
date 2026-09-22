@@ -2,7 +2,7 @@ name: Deploy to Dokploy
 
 on:
   workflow_run:
-    workflows: ["Security analysis (asynchronous)"]
+    workflows: ["Seguridad DevSecOps"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -26,16 +26,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    # Solo los análisis de main del propio repositorio pueden iniciar producción.
+  authorize:
+    # Reutiliza la comprobación del informe y la aceptación de main.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
+    uses: ./.github/workflows/authorize-main.yml
+    with:
+      accept_risk: ${{ inputs.accept_risk || false }}
+
+  deploy:
+    needs: authorize
+    if: needs.authorize.outputs.allowed == 'true'
     env:
-      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      DEPLOY_SHA: ${{ needs.authorize.outputs.sha }}
       DEPLOY_REF: ${{ github.event_name == 'workflow_run' && 'refs/heads/main' || github.ref }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment || 'production' }}
@@ -53,69 +60,7 @@ jobs:
         with:
           ref: ${{ env.DEPLOY_SHA }}
           persist-credentials: false
-      - name: Buscar el último análisis de main
-        id: security-run
-        if: env.DEPLOY_REF == 'refs/heads/main'
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
-        with:
-          script: |
-            // workflow_run usa por defecto el SHA de la rama predeterminada.
-            // Se utiliza siempre el SHA del análisis que disparó el despliegue.
-            context.sha = process.env.DEPLOY_SHA || context.sha;
-            if (context.eventName === 'workflow_run') {
-              const {data: main} = await github.rest.repos.getBranch({...context.repo, branch: 'main'});
-              if (main.commit.sha !== context.sha) {
-                core.setFailed('Main ha cambiado; se espera al análisis del nuevo commit.');
-                return;
-              }
-            }
-            const result = await github.rest.actions.listWorkflowRuns({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'security.yml',
-              head_sha: context.sha,
-              per_page: 10
-            });
-
-            const run = result.data.workflow_runs
-              .filter(item => item.head_branch === 'main' && item.event !== 'pull_request')
-              .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
-
-            if (context.eventName === 'workflow_run' && run?.id !== context.payload.workflow_run.id) {
-              core.setFailed('Existe un análisis más reciente; se espera a su resultado.');
-            } else if (!run) {
-              core.setFailed(`No existe un análisis de seguridad para el commit ${context.sha}.`);
-            } else if (run.status !== 'completed' || !['success', 'failure'].includes(run.conclusion)) {
-              core.setFailed(`El último análisis no terminó correctamente: ${run.html_url}`);
-            } else {
-              core.setOutput('run-id', String(run.id));
-              // Un resultado rojo puede deberse a hallazgos que el responsable acepte.
-              core.info(`Análisis que se va a revisar: ${run.html_url}`);
-            }
-      - name: Descargar decisión de seguridad
-        if: env.DEPLOY_REF == 'refs/heads/main'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: spring-boot-security-report-${{ env.DEPLOY_SHA }}
-          path: security-report
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.security-run.outputs.run-id }}
-          github-token: ${{ github.token }}
-      - name: Comprobar el informe y la aceptación del riesgo
-        id: authorization
-        if: env.DEPLOY_REF == 'refs/heads/main'
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
-        env:
-          ACCEPT_RISK: ${{ inputs.accept_risk }}
-          SECURITY_RUN_ID: ${{ steps.security-run.outputs.run-id }}
-        with:
-          script: |
-            const authorize = require('./scripts/authorize_deployment.cjs');
-            const deployment = {...context, repo: context.repo, sha: process.env.DEPLOY_SHA, ref: process.env.DEPLOY_REF};
-            const allowed = await authorize({github, context: deployment, core, runId: Number(process.env.SECURITY_RUN_ID), acceptRisk: process.env.ACCEPT_RISK === 'true'});
-            core.setOutput('allowed', String(allowed));
       - name: Comprobar configuracion
-        if: env.DEPLOY_REF != 'refs/heads/main' || steps.authorization.outputs.allowed == 'true'
         env:
           DOKPLOY_URL: ${{ vars.DOKPLOY_URL }}
           DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
@@ -127,7 +72,6 @@ jobs:
           test -n "$DOKPLOY_COMPOSE_ID"
           test -n "$DEPLOY_HEALTH_URL"
       - name: Desplegar el commit y esperar a Dokploy
-        if: env.DEPLOY_REF != 'refs/heads/main' || steps.authorization.outputs.allowed == 'true'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           DOKPLOY_URL: ${{ vars.DOKPLOY_URL }}
@@ -138,7 +82,6 @@ jobs:
             const deploy = require('./scripts/deploy_dokploy.cjs');
             await deploy({github, context: {...context, repo: context.repo, sha: process.env.DEPLOY_SHA, ref: process.env.DEPLOY_REF}, core});
       - name: Comprobar que la aplicación responde
-        if: env.DEPLOY_REF != 'refs/heads/main' || steps.authorization.outputs.allowed == 'true'
         shell: bash
         env:
           DEPLOY_HEALTH_URL: ${{ vars.DEPLOY_HEALTH_URL }}

@@ -9,7 +9,9 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+sys.path.insert(0, str(PROJECT_ROOT / ".devsecops/engine/scripts"))
+sys.path.insert(0, str(PROJECT_ROOT / ".devsecops/engine/profiles/spring_boot"))
+sys.path.insert(0, str(PROJECT_ROOT / ".devsecops/dashboard"))
 
 import evaluate_policy  # noqa: E402
 import mock_remediation  # noqa: E402

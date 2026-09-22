@@ -51,10 +51,10 @@ Los errores técnicos, los informes ausentes y los analizadores fallidos detiene
 
 ## Código
 
-La comprobación de seguridad y de la aceptación está en `scripts/authorize_deployment.cjs`, invocado desde `.github/workflows/deploy-dokploy.yml`. La comunicación con Dokploy sigue en `scripts/deploy_dokploy.cjs`, sin dependencias adicionales. No publica imágenes en un registro.
+El despliegue espera al análisis `Seguridad DevSecOps` y llama a `.github/workflows/authorize-main.yml`. Este utiliza `.devsecops/engine/scripts/authorize_deployment.cjs` y devuelve si puede desplegarse y el SHA autorizado. La comunicación con Dokploy sigue en `scripts/deploy_dokploy.cjs`, sin dependencias adicionales. No publica imágenes en un registro.
 
 `node --test tests/test_authorize_deployment.cjs` comprueba los informes, los errores técnicos y la aceptación del responsable con respuestas simuladas de GitHub.
 
-`node tests/test_deploy_dokploy.cjs` comprueba ocho escenarios con respuestas simuladas, entre ellos una etiqueta incorrecta, un error de Dokploy y un resultado antiguo. No contacta con el servidor.
+`node tests/test_deploy_dokploy.cjs` comprueba once escenarios con respuestas simuladas, entre ellos una etiqueta incorrecta, un error de Dokploy y un resultado antiguo. No contacta con el servidor.
 
 Se ha contrastado la integración con el código de Dokploy v0.29.13: [clonado de GitHub](https://github.com/Dokploy/dokploy/blob/v0.29.13/packages/server/src/utils/providers/github.ts) y [operaciones de Compose](https://github.com/Dokploy/dokploy/blob/v0.29.13/apps/dokploy/server/api/routers/compose.ts).

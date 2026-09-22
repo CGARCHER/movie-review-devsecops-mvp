@@ -2,11 +2,11 @@
 .github
 target
 reports
-security-fixtures
 data
 .idea
 .vscode
 *.md
 .secrets
+.devsecops/dashboard.env
 .env
 .env.*

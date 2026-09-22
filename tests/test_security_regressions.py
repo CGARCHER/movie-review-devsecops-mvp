@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts" if (ROOT / "scripts").exists() else ROOT / "engine/scripts"
+SCRIPTS = ROOT / ".devsecops/engine/scripts"
 
 
 def load(name):

@@ -49,14 +49,13 @@ services:
 
   security-dashboard:
     build:
-      context: .
-      dockerfile: docker/security-dashboard/Dockerfile
+      context: ./.devsecops/dashboard
     image: movie-review-security-dashboard:dev
     expose:
       - "8080"
     environment:
       GITHUB_REPOSITORY: CGARCHER/movie-review-devsecops-mvp
-      GITHUB_WORKFLOW_FILE: security.yml
+      GITHUB_WORKFLOW_FILE: devsecops.yml
       GITHUB_BRANCH: develop
       GH_TOKEN: ${GH_TOKEN:?Define GH_TOKEN en Dokploy}
       REPORT_ROOT: /workspace/reports

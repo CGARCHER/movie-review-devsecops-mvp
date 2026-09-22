@@ -2,7 +2,7 @@
 
 Aplicación Spring Boot sencilla para registrar películas y reseñas. Se utilizó como primer caso de estudio del TFM para construir y comprobar una *pipeline* DevSecOps asíncrona, el panel de seguridad y la remediación asistida por inteligencia artificial.
 
-Este repositorio conserva el MVP y sirve como ejemplo reproducible. La herramienta destinada a preparar otros proyectos es el [Inicializador DevSecOps](https://github.com/CGARCHER/devsecops-learning-initializer).
+Este repositorio conserva la aplicación del MVP y utiliza el paquete generado por el [Inicializador DevSecOps](https://github.com/CGARCHER/devsecops-learning-initializer). El núcleo y el panel están en `.devsecops/`; no se mantienen copias antiguas en paralelo.
 
 ## Qué permite comprobar
 
@@ -30,8 +30,8 @@ flowchart LR
     D --> E[Panel de seguridad]
     D --> F{Decisión}
     F -->|APPROVED| G[Puede promocionarse]
-    F -->|REVIEW_REQUIRED| H[Revisión humana]
-    F -->|BLOCKED o ANALYSIS_ERROR| I[No se despliega]
+    F -->|REVIEW_REQUIRED o BLOCKED| H[Aceptación del responsable]
+    F -->|ANALYSIS_ERROR| I[No se despliega]
 ```
 
 La integración continua y los análisis de seguridad se ejecutan de forma independiente. Así, un error de compilación se conoce sin esperar a que finalicen Semgrep y Trivy. Los resultados de seguridad se reúnen después para aplicar una única política.
@@ -62,10 +62,9 @@ La aplicación queda disponible en <http://localhost:8080>. Los datos se almacen
 ## Ejecutar el entorno completo con Docker
 
 1. Copia `.env.example` como `.env` y cambia la contraseña local de PostgreSQL.
-2. Crea la carpeta `.secrets`.
-3. Añade el token de GitHub en `.secrets/github_token.txt`.
-4. Si se va a probar la remediación, añade el token de la API en `.secrets/ai_api_token.txt`. Si no se utiliza, el fichero puede quedar vacío.
-5. Inicia los servicios:
+2. Copia `.devsecops/dashboard.env.example` como `.devsecops/dashboard.env`.
+3. Indica `CGARCHER/movie-review-devsecops-mvp`, la rama que quieres consultar y los tokens de GitHub e IA. El fichero real está excluido de Git.
+4. Inicia los servicios:
 
 ```bash
 docker compose -f compose.local.yml up -d --build
@@ -81,7 +80,8 @@ Si alguno de esos puertos ya está ocupado, debe detenerse el servicio anterior 
 
 ### Ficheros Compose
 
-- `compose.local.yml`: aplicación, PostgreSQL y panel de seguridad en el equipo del alumno.
+- `compose.local.yml`: aplicación y PostgreSQL; reutiliza el panel definido en `compose.security.yml` y conserva los informes en `reports/`.
+- `compose.security.yml`: permite arrancar únicamente el panel generado.
 - `compose.dev.yml`: aplicación, PostgreSQL y panel en el entorno `develop` de Dokploy.
 - `compose.main.yml`: aplicación y PostgreSQL en producción, sin publicar el panel.
 
@@ -121,10 +121,11 @@ Ejemplo de reseña:
 | Workflow | Qué hace |
 | --- | --- |
 | `.github/workflows/ci.yml` | Compila, ejecuta las pruebas y construye la imagen Docker. |
-| `.github/workflows/security.yml` | Ejecuta SAST, SCA y análisis de la imagen; después normaliza los informes y aplica la política. |
+| `.github/workflows/devsecops.yml` | Ejecuta SAST, SCA y análisis de la imagen; después normaliza los informes y aplica la política. |
+| `.github/workflows/authorize-main.yml` | Comprueba el informe del mismo commit y la aceptación de los hallazgos; devuelve la autorización y el SHA. |
 | `.github/workflows/deploy-dokploy.yml` | Despliega el commit de main con informe válido y, si hay riesgo, aceptación mediante una casilla al lanzar el despliegue. |
 
-Antes de analizar, `security.yml` detecta la raíz de Spring Boot, Maven o Gradle, la versión de Java y el Dockerfile. También admite proyectos situados en un subdirectorio. Si encuentra varios módulos posibles, solicita `project_path` para no elegir uno de forma silenciosa.
+Antes de analizar, `devsecops.yml` detecta la raíz de Spring Boot, Maven o Gradle, la versión de Java y el Dockerfile. También admite proyectos situados en un subdirectorio. Si encuentra varios proyectos posibles, detiene la detección para no elegir uno de forma silenciosa.
 
 ### Controles de seguridad
 
@@ -135,8 +136,6 @@ Antes de analizar, `security.yml` detecta la raíz de Spring Boot, Maven o Gradl
 | Contenedor | Trivy | Paquetes incluidos en la imagen Docker final. |
 
 CycloneDX genera el inventario de dependencias en formato SBOM. Trivy utiliza ese inventario para el análisis SCA y revisa por separado la imagen construida.
-
-Los ejemplos vulnerables de `security-fixtures` solo sirven para comprobar que las herramientas detectan los casos esperados. No se compilan, no forman parte de la aplicación y sus resultados no intervienen en la decisión del proyecto real.
 
 ### Estados de la política
 
@@ -151,11 +150,11 @@ La ausencia de un informe nunca se interpreta como ausencia de vulnerabilidades.
 
 ## Panel de seguridad
 
-El panel descarga el último artefacto `spring-boot-security-report-*` generado por GitHub Actions. Muestra el estado de la política, los datos del commit, el recuento por severidad y una tabla de hallazgos.
+El panel descarga el último artefacto `devsecops-security-report-*` generado por GitHub Actions. Muestra el estado de la política, los datos del commit, el recuento por severidad y una tabla de hallazgos.
 
-Para descargar informes necesita un token de GitHub limitado al repositorio y con permiso **Actions: Read**. La rama se configura mediante `GITHUB_BRANCH` en `.env`; por defecto se utiliza `develop`.
+Para descargar informes necesita un token de GitHub limitado al repositorio y con permiso **Actions: Read**. La rama se configura mediante `GITHUB_BRANCH` en `.devsecops/dashboard.env`; por defecto se utiliza `develop`.
 
-El botón **Explicar con IA** solicita una remediación educativa. El código fuente se monta en modo de solo lectura para aportar únicamente el contexto necesario. El panel muestra la propuesta, pero no modifica el proyecto ni aplica el parche.
+El botón **Cómo corregirlo** solicita una remediación educativa. El código fuente se monta en modo de solo lectura para aportar únicamente el contexto necesario. El panel muestra la propuesta, pero no modifica el proyecto ni aplica el parche.
 
 La creación del token se explica en [`docs/github-token-para-informes.md`](docs/github-token-para-informes.md).
 
@@ -174,13 +173,15 @@ Producción utiliza `compose.main.yml` y se despliega desde main: automáticamen
 
 ## Reutilización en otros proyectos
 
-El workflow de seguridad puede utilizarse desde otro repositorio Spring Boot. No obstante, para una práctica educativa se recomienda usar el [Inicializador DevSecOps](https://github.com/CGARCHER/devsecops-learning-initializer), porque genera una copia autónoma con el workflow, las reglas, las guías y, de forma opcional, el panel local.
+Para incorporar estos controles a otro proyecto Spring Boot, utiliza el [Inicializador DevSecOps](https://github.com/CGARCHER/devsecops-learning-initializer), porque genera una copia autónoma con el workflow, las reglas, las guías y, de forma opcional, el panel local.
 
 ## Comprobaciones locales
 
 ```bash
 ./mvnw test
 python -m unittest discover -s tests -v
+node --test tests/test_authorize_deployment.cjs
+node tests/test_deploy_dokploy.cjs
 docker build -t movie-review:local .
 ```
 

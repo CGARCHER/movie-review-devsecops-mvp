@@ -36,18 +36,17 @@ presentar el mismo problema como vulnerabilidades independientes.
 
 ## Puerta de seguridad
 
-El job `aggregate` valida y publica primero todos los resultados. Su último
-paso aplica la puerta de seguridad:
+El job `security / aggregate` valida y publica los resultados. La política
+se encuentra en `.devsecops/engine/security/policy.json`.
 
-- un error técnico produce `ANALYSIS_ERROR`;
-- un hallazgo crítico produce `BLOCKED` y hace fallar deliberadamente el job;
-- `REVIEW_REQUIRED` queda visible como advertencia;
-- `APPROVED` permite que producción consulte y acepte el informe.
+- Un error técnico produce `ANALYSIS_ERROR` y hace fallar el análisis.
+- Los hallazgos críticos producen `BLOCKED`; los altos o desconocidos, `REVIEW_REQUIRED`.
+- Con informes válidos, el análisis termina en verde aunque existan hallazgos.
+- `APPROVED` permite continuar automáticamente con el despliegue de main.
 
-Por tanto, un `aggregate` rojo con el mensaje "Despliegue bloqueado por la
-política" indica que se han detectado hallazgos críticos. Este resultado es
-informativo en la PR y requiere una aceptación expresa antes de desplegar.
-La autorización humana se registra por separado y conserva el estado del informe.
+El workflow de autorización comprueba por separado la decisión. Los estados
+`BLOCKED` y `REVIEW_REQUIRED` requieren aceptación manual antes de desplegar.
+Esa aceptación se registra sin modificar el informe.
 
 ## Promoción entre entornos
 
